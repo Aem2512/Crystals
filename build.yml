@@ -1,0 +1,362 @@
+name: Build Kyber APK
+
+on:
+  workflow_dispatch:
+  push:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Create Android project
+        run: |
+          set -e
+          mkdir -p app/src/main/java/com/kyber/saber app/src/main/assets app/src/main/res/drawable
+          cp lightsaber.html app/src/main/assets/lightsaber.html
+          cat > settings.gradle <<'EOF'
+          pluginManagement {
+              repositories { google(); mavenCentral(); gradlePluginPortal() }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories { google(); mavenCentral() }
+          }
+          rootProject.name = 'Kyber'
+          include ':app'
+          EOF
+          cat > gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx2g
+          android.useAndroidX=true
+          EOF
+          cat > build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application' version '8.5.2' apply false
+          }
+          EOF
+          cat > app/build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application'
+          }
+          android {
+              namespace 'com.kyber.saber'
+              compileSdk 34
+              defaultConfig {
+                  applicationId 'com.kyber.saber'
+                  minSdk 26
+                  targetSdk 34
+                  versionCode 1
+                  versionName '1.0'
+              }
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+          }
+          dependencies {
+              implementation 'androidx.webkit:webkit:1.11.0'
+          }
+          EOF
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.VIBRATE" />
+              <uses-permission android:name="android.permission.INTERNET" />
+              <application
+                  android:allowBackup="false"
+                  android:icon="@drawable/ic_launcher"
+                  android:label="Kyber"
+                  android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize|screenLayout|uiMode"
+                      android:screenOrientation="portrait">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+          cat > app/src/main/res/drawable/ic_launcher.xml <<'EOF'
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="108dp" android:height="108dp"
+              android:viewportWidth="108" android:viewportHeight="108">
+              <path android:fillColor="#000000" android:pathData="M0,0h108v108h-108z" />
+              <path android:fillColor="#4AA8FF" android:pathData="M48,16h12v76h-12z" />
+              <path android:fillColor="#FFFFFF" android:pathData="M52,16h4v76h-4z" />
+          </vector>
+          EOF
+          cat > app/src/main/java/com/kyber/saber/MainActivity.java <<'EOF'
+          package com.kyber.saber;
+
+          import android.app.Activity;
+          import android.content.Context;
+          import android.graphics.Color;
+          import android.graphics.drawable.ColorDrawable;
+          import android.media.AudioAttributes;
+          import android.os.Build;
+          import android.os.Bundle;
+          import android.os.SystemClock;
+          import android.os.VibrationEffect;
+          import android.os.Vibrator;
+          import android.view.View;
+          import android.view.Window;
+          import android.view.WindowInsets;
+          import android.view.WindowInsetsController;
+          import android.view.WindowManager;
+          import android.webkit.JavascriptInterface;
+          import android.webkit.ValueCallback;
+          import android.webkit.WebResourceRequest;
+          import android.webkit.WebResourceResponse;
+          import android.webkit.WebSettings;
+          import android.webkit.WebView;
+          import android.webkit.WebViewClient;
+          import androidx.webkit.WebViewAssetLoader;
+
+          public class MainActivity extends Activity {
+              private WebView web;
+              private Vibrator vib;
+              private AudioAttributes attrs;
+              private boolean hasAmp;
+              private volatile long holdUntil = 0;
+              private volatile int lastAmp = 0;
+              private volatile long lastIssue = 0;
+
+              @Override
+              protected void onCreate(Bundle saved) {
+                  super.onCreate(saved);
+                  Window w = getWindow();
+                  w.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                  w.setBackgroundDrawable(new ColorDrawable(Color.BLACK));
+                  w.setNavigationBarColor(Color.BLACK);
+                  w.setStatusBarColor(Color.BLACK);
+                  if (Build.VERSION.SDK_INT >= 28) {
+                      WindowManager.LayoutParams lp = w.getAttributes();
+                      lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+                      w.setAttributes(lp);
+                  }
+
+                  vib = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+                  hasAmp = vib != null && vib.hasAmplitudeControl();
+                  attrs = new AudioAttributes.Builder()
+                          .setUsage(AudioAttributes.USAGE_MEDIA)
+                          .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                          .build();
+
+                  web = new WebView(this);
+                  web.setBackgroundColor(Color.BLACK);
+                  web.setOverScrollMode(View.OVER_SCROLL_NEVER);
+                  setContentView(web);
+                  WebSettings s = web.getSettings();
+                  s.setJavaScriptEnabled(true);
+                  s.setDomStorageEnabled(true);
+                  s.setMediaPlaybackRequiresUserGesture(false);
+                  s.setAllowFileAccess(false);
+                  web.addJavascriptInterface(new Bridge(), "Native");
+
+                  final WebViewAssetLoader loader = new WebViewAssetLoader.Builder()
+                          .addPathHandler("/assets/", new WebViewAssetLoader.AssetsPathHandler(this))
+                          .build();
+                  web.setWebViewClient(new WebViewClient() {
+                      @Override
+                      public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+                          return loader.shouldInterceptRequest(request.getUrl());
+                      }
+                  });
+                  web.loadUrl("https://appassets.androidplatform.net/assets/lightsaber.html");
+                  hideBars();
+              }
+
+              private void hideBars() {
+                  Window w = getWindow();
+                  if (Build.VERSION.SDK_INT >= 30) {
+                      w.setDecorFitsSystemWindows(false);
+                      WindowInsetsController c = w.getInsetsController();
+                      if (c != null) {
+                          c.hide(WindowInsets.Type.systemBars());
+                          c.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                      }
+                  } else {
+                      w.getDecorView().setSystemUiVisibility(
+                              View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                              | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                              | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                              | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                              | View.SYSTEM_UI_FLAG_FULLSCREEN
+                              | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
+                  }
+              }
+
+              @Override
+              public void onWindowFocusChanged(boolean hasFocus) {
+                  super.onWindowFocusChanged(hasFocus);
+                  if (hasFocus) hideBars();
+              }
+
+              @Override
+              protected void onPause() {
+                  super.onPause();
+                  if (vib != null) vib.cancel();
+                  setBrightness(false);
+                  web.evaluateJavascript("window.__pause&&window.__pause()", null);
+                  web.onPause();
+              }
+
+              @Override
+              protected void onResume() {
+                  super.onResume();
+                  web.onResume();
+                  web.evaluateJavascript("window.__resume&&window.__resume()", null);
+              }
+
+              @Override
+              public void onBackPressed() {
+                  web.evaluateJavascript("(window.__back&&window.__back())===true", new ValueCallback<String>() {
+                      @Override
+                      public void onReceiveValue(String v) {
+                          if (!"true".equals(v)) finish();
+                      }
+                  });
+              }
+
+              private void setBrightness(final boolean max) {
+                  runOnUiThread(new Runnable() {
+                      @Override
+                      public void run() {
+                          WindowManager.LayoutParams lp = getWindow().getAttributes();
+                          lp.screenBrightness = max ? 1f : WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE;
+                          getWindow().setAttributes(lp);
+                      }
+                  });
+              }
+
+              @SuppressWarnings("deprecation")
+              private void play(VibrationEffect e) {
+                  if (vib == null || e == null) return;
+                  try {
+                      vib.vibrate(e, attrs);
+                  } catch (Throwable t) {
+                      try { vib.vibrate(e); } catch (Throwable ignored) { }
+                  }
+              }
+
+              /** Called from the page's JavaScript as window.Native.* */
+              public class Bridge {
+
+                  /** Continuous swing rumble. a = 0..255, follows the audio level. */
+                  @JavascriptInterface
+                  public void level(int a) {
+                      if (vib == null) return;
+                      long now = SystemClock.uptimeMillis();
+                      if (now < holdUntil) return;
+                      a = Math.max(0, Math.min(255, a));
+                      if (a < 10) {
+                          if (lastAmp > 0) { vib.cancel(); lastAmp = 0; }
+                          return;
+                      }
+                      if (Math.abs(a - lastAmp) < 10 && now - lastIssue < 70) return;
+                      lastAmp = a;
+                      lastIssue = now;
+                      if (hasAmp) {
+                          long[] t = new long[6];
+                          int[] g = new int[6];
+                          for (int i = 0; i < 6; i++) {
+                              t[i] = 20;
+                              g[i] = (i % 2 == 0) ? a : Math.max(1, (int) (a * 0.7f));
+                          }
+                          play(VibrationEffect.createWaveform(t, g, -1));
+                      } else {
+                          int on = 10 + Math.round(a * 25f / 255f);
+                          long[] t = {0, on, 40 - on, on, 40 - on, on, 40 - on};
+                          play(VibrationEffect.createWaveform(t, -1));
+                      }
+                  }
+
+                  /** Ignition (up) or retraction (down) ramp lasting ms milliseconds. */
+                  @JavascriptInterface
+                  public void ramp(boolean up, int ms) {
+                      if (vib == null) return;
+                      holdUntil = SystemClock.uptimeMillis() + ms;
+                      lastAmp = 0;
+                      if (hasAmp) {
+                          int n = Math.max(2, ms / 20);
+                          long[] t = new long[n];
+                          int[] g = new int[n];
+                          for (int i = 0; i < n; i++) {
+                              float l = i / (float) (n - 1);
+                              if (!up) l = 1f - l;
+                              t[i] = 20;
+                              g[i] = Math.max(1, Math.round(30 + l * 225));
+                          }
+                          play(VibrationEffect.createWaveform(t, g, -1));
+                      } else {
+                          play(VibrationEffect.createOneShot(ms, VibrationEffect.DEFAULT_AMPLITUDE));
+                      }
+                  }
+
+                  /** Blade clash. power 0..1 */
+                  @JavascriptInterface
+                  public void clash(double power) {
+                      if (vib == null) return;
+                      float sc = (float) Math.max(0.4, Math.min(1.0, power));
+                      holdUntil = SystemClock.uptimeMillis() + 300;
+                      lastAmp = 0;
+                      VibrationEffect e;
+                      if (Build.VERSION.SDK_INT >= 30 && vib.areAllPrimitivesSupported(
+                              VibrationEffect.Composition.PRIMITIVE_THUD,
+                              VibrationEffect.Composition.PRIMITIVE_CLICK,
+                              VibrationEffect.Composition.PRIMITIVE_TICK)) {
+                          e = VibrationEffect.startComposition()
+                                  .addPrimitive(VibrationEffect.Composition.PRIMITIVE_THUD, sc)
+                                  .addPrimitive(VibrationEffect.Composition.PRIMITIVE_CLICK, sc * 0.85f, 25)
+                                  .addPrimitive(VibrationEffect.Composition.PRIMITIVE_TICK, sc * 0.6f, 25)
+                                  .compose();
+                      } else if (hasAmp) {
+                          e = VibrationEffect.createWaveform(
+                                  new long[]{45, 12, 40, 12, 30, 12, 20},
+                                  new int[]{255, 0, 200, 0, 150, 0, 100}, -1);
+                      } else {
+                          e = VibrationEffect.createOneShot(60, VibrationEffect.DEFAULT_AMPLITUDE);
+                      }
+                      play(e);
+                  }
+
+                  /** Short flick (Kylo crackle). a = 0..255 */
+                  @JavascriptInterface
+                  public void tick(int a) {
+                      if (vib == null) return;
+                      holdUntil = SystemClock.uptimeMillis() + 25;
+                      lastAmp = 0;
+                      a = Math.max(1, Math.min(255, a));
+                      play(VibrationEffect.createOneShot(14, hasAmp ? a : VibrationEffect.DEFAULT_AMPLITUDE));
+                  }
+
+                  /** Max screen brightness while the saber is lit. */
+                  @JavascriptInterface
+                  public void bright(boolean on) {
+                      setBrightness(on);
+                  }
+              }
+          }
+          EOF
+
+      - name: Build APK
+        run: gradle assembleDebug --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Kyber-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
