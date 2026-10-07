@@ -1,0 +1,584 @@
+name: Build Kyber APK
+
+on:
+  workflow_dispatch:
+  push:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Create Android project
+        run: |
+          set -e
+          mkdir -p app/src/main/java/com/kyber/saber app/src/main/assets app/src/main/res/drawable
+          cp lightsaber.html app/src/main/assets/lightsaber.html
+          cat > settings.gradle <<'EOF'
+          pluginManagement {
+              repositories { google(); mavenCentral(); gradlePluginPortal() }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories { google(); mavenCentral() }
+          }
+          rootProject.name = 'Kyber'
+          include ':app'
+          EOF
+          cat > gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx2g
+          android.useAndroidX=true
+          EOF
+          cat > build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application' version '8.5.2' apply false
+          }
+          EOF
+          cat > app/build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application'
+          }
+          android {
+              namespace 'com.kyber.saber'
+              compileSdk 34
+              defaultConfig {
+                  applicationId 'com.kyber.saber'
+                  minSdk 26
+                  targetSdk 34
+                  versionCode 1
+                  versionName '1.0'
+              }
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+          }
+          dependencies {
+              implementation 'androidx.webkit:webkit:1.11.0'
+          }
+          EOF
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.VIBRATE" />
+              <uses-permission android:name="android.permission.INTERNET" />
+              <application
+                  android:allowBackup="false"
+                  android:icon="@drawable/ic_launcher"
+                  android:label="Kyber"
+                  android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize|screenLayout|uiMode"
+                      android:screenOrientation="portrait">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+          cat > app/src/main/res/drawable/ic_launcher.xml <<'EOF'
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="108dp" android:height="108dp"
+              android:viewportWidth="108" android:viewportHeight="108">
+              <path android:fillColor="#000000" android:pathData="M0,0h108v108h-108z" />
+              <path android:fillColor="#4AA8FF" android:pathData="M48,16h12v76h-12z" />
+              <path android:fillColor="#FFFFFF" android:pathData="M52,16h4v76h-4z" />
+          </vector>
+          EOF
+          cat > app/src/main/java/com/kyber/saber/MainActivity.java <<'EOF'
+          package com.kyber.saber;
+
+          import android.app.Activity;
+          import android.content.Context;
+          import android.graphics.Color;
+          import android.graphics.drawable.ColorDrawable;
+          import android.media.AudioAttributes;
+          import android.os.Build;
+          import android.os.Bundle;
+          import android.os.Handler;
+          import android.os.HandlerThread;
+          import android.os.SystemClock;
+          import android.os.VibrationEffect;
+          import android.os.Vibrator;
+          import android.view.View;
+          import android.view.Window;
+          import android.view.WindowInsets;
+          import android.view.WindowInsetsController;
+          import android.view.WindowManager;
+          import android.webkit.JavascriptInterface;
+          import android.webkit.ValueCallback;
+          import android.webkit.WebResourceRequest;
+          import android.webkit.WebResourceResponse;
+          import android.webkit.WebSettings;
+          import android.webkit.WebView;
+          import android.webkit.WebViewClient;
+          import androidx.webkit.WebViewAssetLoader;
+          import java.util.concurrent.atomic.AtomicBoolean;
+
+          public class MainActivity extends Activity {
+              private WebView web;
+              private Vibrator vib;
+              private AudioAttributes attrs;
+              private AudioAttributes attrsAlarm;
+              private AudioAttributes attrsTouch;
+              private boolean hasAmp;
+              private boolean primOk;
+
+              private HandlerThread ht;
+              private Handler hh;                       // haptic timing thread
+              private volatile long holdUntil = 0;      // ignition / clash own the motor until this time
+              private volatile int gen = 0;             // bumping this cancels scheduled pulses
+              private volatile int feelEffect = -1;     // swing pulse type: 0 tick, 1 click, 2 heavy click, -1 off
+              private volatile int feelGap = 30;        // ms between swing pulses
+              private volatile long feelStamp = 0;
+              private final AtomicBoolean loopRunning = new AtomicBoolean(false);
+
+              @Override
+              protected void onCreate(Bundle saved) {
+                  super.onCreate(saved);
+                  ht = new HandlerThread("kyber-haptics");
+                  ht.start();
+                  hh = new Handler(ht.getLooper());
+
+                  Window w = getWindow();
+                  w.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                  w.setBackgroundDrawable(new ColorDrawable(Color.BLACK));
+                  w.setNavigationBarColor(Color.BLACK);
+                  w.setStatusBarColor(Color.BLACK);
+                  if (Build.VERSION.SDK_INT >= 28) {
+                      WindowManager.LayoutParams lp = w.getAttributes();
+                      lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+                      w.setAttributes(lp);
+                  }
+
+                  vib = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+                  hasAmp = vib != null && vib.hasAmplitudeControl();
+                  primOk = false;
+                  if (vib != null && Build.VERSION.SDK_INT >= 30) {
+                      try {
+                          primOk = vib.areAllPrimitivesSupported(
+                                  VibrationEffect.Composition.PRIMITIVE_TICK,
+                                  VibrationEffect.Composition.PRIMITIVE_CLICK,
+                                  VibrationEffect.Composition.PRIMITIVE_THUD);
+                      } catch (Throwable t) {
+                          primOk = false;
+                      }
+                  }
+                  attrs = new AudioAttributes.Builder()
+                          .setUsage(AudioAttributes.USAGE_MEDIA)
+                          .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                          .build();
+                  attrsAlarm = new AudioAttributes.Builder()
+                          .setUsage(AudioAttributes.USAGE_ALARM)
+                          .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                          .build();
+                  attrsTouch = new AudioAttributes.Builder()
+                          .setUsage(AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+                          .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                          .build();
+
+                  web = new WebView(this);
+                  web.setBackgroundColor(Color.BLACK);
+                  web.setOverScrollMode(View.OVER_SCROLL_NEVER);
+                  setContentView(web);
+                  WebSettings s = web.getSettings();
+                  s.setJavaScriptEnabled(true);
+                  s.setDomStorageEnabled(true);
+                  s.setMediaPlaybackRequiresUserGesture(false);
+                  s.setAllowFileAccess(false);
+                  web.addJavascriptInterface(new Bridge(), "Native");
+
+                  final WebViewAssetLoader loader = new WebViewAssetLoader.Builder()
+                          .addPathHandler("/assets/", new WebViewAssetLoader.AssetsPathHandler(this))
+                          .build();
+                  web.setWebViewClient(new WebViewClient() {
+                      @Override
+                      public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+                          return loader.shouldInterceptRequest(request.getUrl());
+                      }
+                  });
+                  web.loadUrl("https://appassets.androidplatform.net/assets/lightsaber.html");
+                  hideBars();
+              }
+
+              private void hideBars() {
+                  Window w = getWindow();
+                  if (Build.VERSION.SDK_INT >= 30) {
+                      w.setDecorFitsSystemWindows(false);
+                      WindowInsetsController c = w.getInsetsController();
+                      if (c != null) {
+                          c.hide(WindowInsets.Type.systemBars());
+                          c.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                      }
+                  } else {
+                      w.getDecorView().setSystemUiVisibility(
+                              View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                              | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                              | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                              | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                              | View.SYSTEM_UI_FLAG_FULLSCREEN
+                              | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
+                  }
+              }
+
+              @Override
+              public void onWindowFocusChanged(boolean hasFocus) {
+                  super.onWindowFocusChanged(hasFocus);
+                  if (hasFocus) hideBars();
+              }
+
+              private void stopHaptics() {
+                  feelEffect = -1;
+                  gen++;
+                  hh.removeCallbacksAndMessages(null);
+                  loopRunning.set(false);
+                  if (vib != null) vib.cancel();
+              }
+
+              @Override
+              protected void onPause() {
+                  super.onPause();
+                  stopHaptics();
+                  setBrightness(false);
+                  web.evaluateJavascript("window.__pause&&window.__pause()", null);
+                  web.onPause();
+              }
+
+              @Override
+              protected void onResume() {
+                  super.onResume();
+                  web.onResume();
+                  web.evaluateJavascript("window.__resume&&window.__resume()", null);
+              }
+
+              @Override
+              protected void onDestroy() {
+                  super.onDestroy();
+                  if (ht != null) ht.quitSafely();
+              }
+
+              @Override
+              public void onBackPressed() {
+                  web.evaluateJavascript("(window.__back&&window.__back())===true", new ValueCallback<String>() {
+                      @Override
+                      public void onReceiveValue(String v) {
+                          if (!"true".equals(v)) finish();
+                      }
+                  });
+              }
+
+              private void setBrightness(final boolean max) {
+                  runOnUiThread(new Runnable() {
+                      @Override
+                      public void run() {
+                          WindowManager.LayoutParams lp = getWindow().getAttributes();
+                          lp.screenBrightness = max ? 1f : WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE;
+                          getWindow().setAttributes(lp);
+                      }
+                  });
+              }
+
+              @SuppressWarnings("deprecation")
+              private void playAs(VibrationEffect e, int mode) {
+                  if (vib == null || e == null) return;
+                  try {
+                      if (mode == 1) vib.vibrate(e, attrsAlarm);
+                      else if (mode == 2) vib.vibrate(e, attrsTouch);
+                      else if (mode == 3) vib.vibrate(e);
+                      else vib.vibrate(e, attrs);
+                  } catch (Throwable t) { }
+              }
+
+              /** code: 0 = tick, 1 = click, 2 = heavy click (the phone's own built-in effects). */
+              private void fire(int code) {
+                  if (Build.VERSION.SDK_INT < 29) return;
+                  int id = code == 2 ? VibrationEffect.EFFECT_HEAVY_CLICK
+                          : (code == 1 ? VibrationEffect.EFFECT_CLICK : VibrationEffect.EFFECT_TICK);
+                  try {
+                      playAs(VibrationEffect.createPredefined(id), 0);
+                  } catch (Throwable ignored) { }
+              }
+
+              private void schedFire(final int code, long delay) {
+                  final int g = gen;
+                  hh.postDelayed(new Runnable() {
+                      @Override
+                      public void run() {
+                          if (g == gen) fire(code);
+                      }
+                  }, delay);
+              }
+
+              private void schedEffect(final int effect, long delay, final int mode) {
+                  final int g = gen;
+                  hh.postDelayed(new Runnable() {
+                      @Override
+                      public void run() {
+                          if (g != gen) return;
+                          try {
+                              if (Build.VERSION.SDK_INT >= 29) {
+                                  playAs(VibrationEffect.createPredefined(effect), mode);
+                              }
+                          } catch (Throwable ignored) { }
+                      }
+                  }, delay);
+              }
+
+              private static int minGap(int code) {
+                  return code == 2 ? 45 : (code == 1 ? 33 : 25);   // keeps pulses from cutting each other off
+              }
+
+              /** The swing / idle pulse train. Pulse type and gap are updated live from the page's audio. */
+              private final Runnable feelLoop = new Runnable() {
+                  @Override
+                  public void run() {
+                      long now = SystemClock.uptimeMillis();
+                      int e = feelEffect;
+                      if (e < 0 || now - feelStamp > 250) {
+                          loopRunning.set(false);
+                          return;
+                      }
+                      long delay;
+                      if (now < holdUntil) {
+                          delay = 20;
+                      } else {
+                          fire(e);
+                          delay = Math.max(minGap(e), feelGap);
+                      }
+                      hh.postDelayed(this, delay);
+                  }
+              };
+
+              private long[] pwm(int on, int off, int totalMs) {
+                  int cycles = Math.max(1, totalMs / (on + off));
+                  long[] t = new long[1 + cycles * 2];
+                  t[0] = 0;
+                  for (int i = 0; i < cycles; i++) {
+                      t[1 + 2 * i] = on;
+                      t[2 + 2 * i] = off;
+                  }
+                  return t;
+              }
+
+              private long[] pwmRamp(int totalMs) {
+                  int cycles = Math.max(2, totalMs / 20);
+                  long[] t = new long[1 + cycles * 2];
+                  t[0] = 0;
+                  for (int i = 0; i < cycles; i++) {
+                      float x = i / (float) (cycles - 1);
+                      int on = Math.round(3 + x * 16);
+                      t[1 + 2 * i] = on;
+                      t[2 + 2 * i] = 20 - on;
+                  }
+                  return t;
+              }
+
+              private void train(int effect, int interval, int count, int mode) {
+                  for (int i = 0; i < count; i++) schedEffect(effect, (long) i * interval, mode);
+              }
+
+              /** Called from the page's JavaScript as window.Native.* */
+              public class Bridge {
+
+                  /** Live swing/idle pulses: effect 0 tick, 1 click, 2 heavy click (-1 = stop), gap in ms. */
+                  @JavascriptInterface
+                  public void feel(int effect, int gap) {
+                      try {
+                          if (vib == null) return;
+                          feelEffect = effect;
+                          feelGap = Math.max(10, Math.min(200, gap));
+                          feelStamp = SystemClock.uptimeMillis();
+                          if (effect >= 0 && loopRunning.compareAndSet(false, true)) hh.post(feelLoop);
+                      } catch (Throwable ignored) { }
+                  }
+
+                  /** Ignition charge-up (ticks speed up, then a heavy click) or retraction power-down. ms = total length. */
+                  @JavascriptInterface
+                  public void charge(boolean up, int ms) {
+                      try {
+                          if (vib == null) return;
+                          gen++;
+                          holdUntil = SystemClock.uptimeMillis() + ms + 120;
+                          int n = 24;
+                          double[] gaps = new double[n];
+                          double g = 45, sum = 0;
+                          for (int i = 0; i < n; i++) {
+                              gaps[i] = g;
+                              sum += g;
+                              g = Math.max(14, g * 0.9);
+                          }
+                          double sc = Math.max(0.5, (ms - 20) / sum);
+                          double t = 0;
+                          for (int i = 0; i < n; i++) {
+                              int k = up ? i : n - 1 - i;
+                              schedFire(0, Math.round(t));
+                              t += gaps[k] * sc;
+                          }
+                          schedFire(up ? 2 : 1, ms);
+                      } catch (Throwable ignored) { }
+                  }
+
+                  /** Blade clash. power 0..1: a firm single hit, or the full combo for hard clashes. */
+                  @JavascriptInterface
+                  public void clash(double power) {
+                      try {
+                          if (vib == null) return;
+                          gen++;
+                          holdUntil = SystemClock.uptimeMillis() + 280;
+                          fire(2);
+                          if (power >= 0.65) {
+                              schedFire(2, 45);
+                              schedFire(1, 100);
+                              schedFire(0, 150);
+                              schedFire(0, 190);
+                          }
+                      } catch (Throwable ignored) { }
+                  }
+
+                  /** One instant pulse (Crimson crackle). code 0 tick, 1 click, 2 heavy click. */
+                  @JavascriptInterface
+                  public void hit(int code) {
+                      try {
+                          if (vib == null) return;
+                          fire(code);
+                      } catch (Throwable ignored) { }
+                  }
+
+                  /** What this phone reports about its vibration hardware. */
+                  @JavascriptInterface
+                  public String info() {
+                      StringBuilder sb = new StringBuilder();
+                      sb.append("Strength control: ").append(hasAmp);
+                      sb.append("\nRich effects: ").append(primOk);
+                      sb.append("\nAndroid API: ").append(Build.VERSION.SDK_INT);
+                      try {
+                          if (Build.VERSION.SDK_INT >= 30 && vib != null) {
+                              int[] r = vib.areEffectsSupported(
+                                      VibrationEffect.EFFECT_TICK, VibrationEffect.EFFECT_CLICK,
+                                      VibrationEffect.EFFECT_HEAVY_CLICK, VibrationEffect.EFFECT_DOUBLE_CLICK);
+                              sb.append("\nBuilt-in effects (tick/click/heavy/double): ");
+                              for (int i = 0; i < r.length; i++) {
+                                  sb.append(r[i] == Vibrator.VIBRATION_EFFECT_SUPPORT_YES ? "yes"
+                                          : (r[i] == Vibrator.VIBRATION_EFFECT_SUPPORT_NO ? "no" : "?"));
+                                  if (i < r.length - 1) sb.append("/");
+                              }
+                          }
+                      } catch (Throwable t) {
+                          sb.append("\nBuilt-in effects: error");
+                      }
+                      try {
+                          java.lang.reflect.Method m = Vibrator.class.getMethod("areEnvelopeEffectsSupported");
+                          sb.append("\nEnvelope effects: ").append(String.valueOf(m.invoke(vib)));
+                      } catch (Throwable t) {
+                          sb.append("\nEnvelope effects: n/a");
+                      }
+                      return sb.toString();
+                  }
+
+                  /** Haptic lab: play test pattern number id (0 = stop). */
+                  @JavascriptInterface
+                  public void lab(final int id) {
+                      try {
+                          if (vib == null) return;
+                          stopHaptics();
+                          holdUntil = SystemClock.uptimeMillis() + 2500;
+                          switch (id) {
+                              case 1:
+                                  playAs(VibrationEffect.createOneShot(1500, VibrationEffect.DEFAULT_AMPLITUDE), 0);
+                                  break;
+                              case 2:
+                                  playAs(VibrationEffect.createWaveform(pwm(16, 4, 1500), -1), 0);
+                                  break;
+                              case 3:
+                                  playAs(VibrationEffect.createWaveform(pwm(10, 10, 1500), -1), 0);
+                                  break;
+                              case 4:
+                                  playAs(VibrationEffect.createWaveform(pwm(6, 14, 1500), -1), 0);
+                                  break;
+                              case 5:
+                                  playAs(VibrationEffect.createWaveform(pwm(20, 20, 1500), -1), 0);
+                                  break;
+                              case 6:
+                                  playAs(VibrationEffect.createWaveform(pwmRamp(1500), -1), 0);
+                                  break;
+                              case 7:
+                                  train(VibrationEffect.EFFECT_TICK, 25, 60, 0);
+                                  break;
+                              case 8:
+                                  train(VibrationEffect.EFFECT_CLICK, 35, 43, 0);
+                                  break;
+                              case 9:
+                                  train(VibrationEffect.EFFECT_HEAVY_CLICK, 50, 30, 0);
+                                  break;
+                              case 10: {
+                                  long tm = 0;
+                                  float gap = 45f;
+                                  for (int i = 0; i < 24; i++) {
+                                      schedEffect(VibrationEffect.EFFECT_TICK, tm, 0);
+                                      tm += (long) gap;
+                                      gap = Math.max(14f, gap * 0.9f);
+                                  }
+                                  schedEffect(VibrationEffect.EFFECT_HEAVY_CLICK, tm + 20, 0);
+                                  break;
+                              }
+                              case 11:
+                                  schedEffect(VibrationEffect.EFFECT_HEAVY_CLICK, 0, 0);
+                                  break;
+                              case 12:
+                                  schedEffect(VibrationEffect.EFFECT_CLICK, 0, 0);
+                                  break;
+                              case 13:
+                                  schedEffect(VibrationEffect.EFFECT_DOUBLE_CLICK, 0, 0);
+                                  break;
+                              case 14:
+                                  schedEffect(VibrationEffect.EFFECT_HEAVY_CLICK, 0, 0);
+                                  schedEffect(VibrationEffect.EFFECT_HEAVY_CLICK, 45, 0);
+                                  schedEffect(VibrationEffect.EFFECT_CLICK, 100, 0);
+                                  schedEffect(VibrationEffect.EFFECT_TICK, 150, 0);
+                                  schedEffect(VibrationEffect.EFFECT_TICK, 190, 0);
+                                  break;
+                              case 15:
+                                  playAs(VibrationEffect.createWaveform(pwm(16, 4, 1500), -1), 1);
+                                  break;
+                              case 16:
+                                  playAs(VibrationEffect.createWaveform(pwm(16, 4, 1500), -1), 2);
+                                  break;
+                              case 17:
+                                  playAs(VibrationEffect.createWaveform(pwm(16, 4, 1500), -1), 3);
+                                  break;
+                              default:
+                                  break;
+                          }
+                      } catch (Throwable ignored) { }
+                  }
+
+                  /** Max screen brightness while the saber is lit. */
+                  @JavascriptInterface
+                  public void bright(boolean on) {
+                      setBrightness(on);
+                  }
+              }
+          }
+          EOF
+
+      - name: Build APK
+        run: gradle assembleDebug --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Kyber-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
