@@ -1,6 +1,6 @@
 # Crystals by AEM
 
-A phone lightsaber you ignite by swiping up. Pick a kyber crystal, light it, swing your phone, clash, block and drag the blade, with real sound fonts and haptics that follow every move.
+A phone lightsaber you ignite by swiping up. Pick a crystal, light it, swing your phone, clash, block and drag the blade, with real sound fonts and haptics that follow every move.
 
 
 <!-- <p align="center"><img src="screenshots/menu.png" width="240"> <img src="screenshots/blade.png" width="240"></p> -->
