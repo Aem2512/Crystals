@@ -1,8 +1,8 @@
-# Crystals
+# Crystals by AEM
 
 A phone lightsaber you ignite by swiping up. Pick a kyber crystal, light it, swing your phone, clash, block and drag the blade, with real sound fonts and haptics that follow every move.
 
-<!-- Add your screenshots here, e.g. -->
+
 <!-- <p align="center"><img src="screenshots/menu.png" width="240"> <img src="screenshots/blade.png" width="240"></p> -->
 
 ## What it does
@@ -35,8 +35,6 @@ A phone lightsaber you ignite by swiping up. Pick a kyber crystal, light it, swi
 
 Crimson and Senate Majority, then the Greyscale fonts: Analog, Crispity, Magnetic, Mercenary, Masterless, Noble, Deadlink, Seethe, Grey, Volatile, Ra, Apocalypse and Exalted.
 
-Crispity is the default when the app opens.
-
 ## Easter egg
 
 Swipe down on a resting crystal to break it. Put the pieces back together and it comes back unstable and cracked. Hold the name to restore it.
@@ -55,4 +53,5 @@ The whole app is one file, `lightsaber.html`, wrapped in an Android WebView by `
 
 ## Credits
 
-Sound fonts by **Greyscale Fonts** (Analog, Crispity, Magnetic, Mercenary, Masterless, Noble, Deadlink, Seethe, Grey, Volatile, Ra, Apocalypse, Exalted) and the Senate Majority Proffieboard font. Blade looks are based on each font's Proffieboard blade style. All sound fonts belong to their authors.
+Sound fonts by **Greyscale Fonts** (Analog, Crispity, Magnetic, Mercenary, Masterless, Noble, Deadlink, Seethe, Grey, Volatile, Ra, Apocalypse, Exalted, https://www.greyscalefonts.com/) 
+and the Senate Majority Proffieboard font. Blade looks are based on each font's Proffieboard blade style. All sound fonts belong to their authors.
