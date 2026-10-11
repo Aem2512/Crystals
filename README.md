@@ -2,8 +2,12 @@
 
 A phone lightsaber you ignite by swiping up. Pick a crystal, light it, swing your phone, clash, block and drag the blade, with real sound fonts and haptics that follow every move.
 
-
-<!-- <p align="center"><img src="screenshots/menu.png" width="240"> <img src="screenshots/blade.png" width="240"></p> -->
+<p align="center">
+  <img src="screenshots/1.png" width="200">
+  <img src="screenshots/2.png" width="200">
+  <img src="screenshots/3.png" width="200">
+  <img src="screenshots/4.png" width="200">
+</p>
 
 ## What it does
 
