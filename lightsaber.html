@@ -2202,7 +2202,7 @@ function domeGeo(){   // blade tip: flat top, corners rounded to the phone's scr
 }
 window.__domeGeo=domeGeo;window.__corner=px=>{if(px>0&&px<200){window.__cornerR=px;domeGeo()}};
 domeGeo();addEventListener('resize',domeGeo);
-let fEma=.016,slowN=0,pePrev=0;
+let fEma=.016,slowN=0,pePrev=0,warmI=0,warmN=0;
 function frame(now){
   const raw=(now-last)/1000;
   if(raw>0&&raw<.25&&!document.hidden){   // if the glass shader is too heavy for this phone, quietly draw it at a lower resolution
@@ -2233,6 +2233,7 @@ function frame(now){
   flicker();crackFx();
   egg.dead+=((egg.state==='broken'?1:0)-egg.dead)*(1-Math.exp(-dt*(egg.state==='broken'?3.2:2.2)));if(egg.dead<.002)egg.dead=0;
   egg.dressCanvas();egg.flickerName();
+  if(warmI<CRYSTALS.length&&tN>2.5&&++warmN>=18&&egg.state==='whole'&&p<.003&&!swap&&!SW.drag){warmN=0;const wi=warmI++;try{render(1,1,0,wi,hex(CRYSTALS[wi].c),true)}catch(_){}}   // draws each crystal once, unseen (the real frame is drawn right after), so the first real view has no hitch
   if(egg.state==='whole')render(sc*(1+.1*e+.1*S.kick),fade,e);else{egg.update(dt);egg.render();if(egg.state==='whole')render(sc*(1+.1*e+.1*S.kick),fade,e)}
   egg.drawGuide();
   requestAnimationFrame(frame);
