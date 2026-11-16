@@ -167,6 +167,19 @@ jobs:
                   w.setBackgroundDrawable(new ColorDrawable(Color.BLACK));
                   w.setNavigationBarColor(Color.BLACK);
                   w.setStatusBarColor(Color.BLACK);
+                  if (Build.VERSION.SDK_INT >= 23) {   // ask for the highest refresh rate and keep it, so the screen does not drop to 60 Hz when nothing is touched
+                      try {
+                          android.view.Display d = getWindowManager().getDefaultDisplay();
+                          android.view.Display.Mode cur = d.getMode(), best = cur;
+                          for (android.view.Display.Mode m : d.getSupportedModes()) {
+                              if (m.getPhysicalWidth() == cur.getPhysicalWidth() && m.getPhysicalHeight() == cur.getPhysicalHeight() && m.getRefreshRate() > best.getRefreshRate()) best = m;
+                          }
+                          WindowManager.LayoutParams rl = w.getAttributes();
+                          rl.preferredDisplayModeId = best.getModeId();
+                          rl.preferredRefreshRate = best.getRefreshRate();
+                          w.setAttributes(rl);
+                      } catch (Exception ignored) {}
+                  }
                   if (Build.VERSION.SDK_INT >= 28) {
                       WindowManager.LayoutParams lp = w.getAttributes();
                       lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
@@ -547,6 +560,20 @@ jobs:
 
               /** Called from the page's JavaScript as window.Native.* */
               public class Bridge {
+
+                  /** What refresh rates Android offers this app, and the one in use now (shown by the FPS counter). */
+                  @JavascriptInterface
+                  public String modes() {
+                      try {
+                          android.view.Display d = getWindowManager().getDefaultDisplay();
+                          android.view.Display.Mode cur = d.getMode();
+                          java.util.TreeSet<Integer> hz = new java.util.TreeSet<Integer>();
+                          for (android.view.Display.Mode m : d.getSupportedModes()) {
+                              if (m.getPhysicalWidth() == cur.getPhysicalWidth() && m.getPhysicalHeight() == cur.getPhysicalHeight()) hz.add(Math.round(m.getRefreshRate()));
+                          }
+                          return "screen " + Math.round(d.getRefreshRate()) + " Hz, offered " + hz.toString().replace("[", "").replace("]", "").replace(", ", "/");
+                      } catch (Exception e) { return ""; }
+                  }
 
                   /** Live swing/idle pulses: effect 0 tick, 1 click, 2 heavy click (-1 = stop), gap in ms. */
                   @JavascriptInterface

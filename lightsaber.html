@@ -240,7 +240,7 @@ const CI=Math.max(0,CRYSTALS.findIndex(k=>k.n===_st));let sel=CI;
 // ---------- audio ----------
 // ---------- settings (saved on the phone) ----------
 const CFG_KEY='crystals.settings.v1';
-const cfg={bright:true,vib:true,swing:0,clash:0,stab:0,swipe:0,lp:0,drag:0,start:'Crispity',corner:0,crn:0,twist:true,twistOff:false,tw2:0,steamP:0,droid:false,tilt:true};
+const cfg={bright:true,vib:true,swing:0,clash:0,stab:0,swipe:0,lp:0,drag:0,start:'Crispity',corner:0,crn:0,twist:true,twistOff:false,tw2:0,steamP:0,droid:false,tilt:true,fps:false};
 try{Object.assign(cfg,JSON.parse(localStorage.getItem(CFG_KEY)||'{}'))}catch(_){}
 function saveCfg(){try{localStorage.setItem(CFG_KEY,JSON.stringify(cfg))}catch(_){}}
 // 7 steps, -3 .. +3, 0 = normal (the original tuning). Higher = more sensitive.
@@ -503,6 +503,8 @@ function coolDown(cf){
 // then three glowing orange sparks fly off the emitter exactly when the sound's three sparkles ring, each with a few small sparks around it
 const EGD={sp:[{t:2420},{t:2565},{t:2715}],pre:{pulse:1,tach:1,sparks:1,glow:1}};
 const EG_T=[2420,2565,2715];
+const __gs=[];function glowSpr(u){const k=Math.max(0,Math.min(7,Math.round(u*7)));if(!__gs[k]){const c=document.createElement('canvas');c.width=c.height=64;const x=c.getContext('2d'),uu=k/7,cg=Math.round(235-150*uu),cb=Math.max(0,Math.round(190-190*Math.min(1,uu*1.6))),g=x.createRadialGradient(32,32,0,32,32,32);   // one soft spark glow per cooling stage, drawn many times
+  g.addColorStop(0,'rgba(255,'+cg+','+cb+',1)');g.addColorStop(1,'rgba(255,100,0,0)');x.fillStyle=g;x.fillRect(0,0,64,64);__gs[k]=c}return __gs[k]}
 window.__egCfg=JSON.parse(JSON.stringify(EGD));
 window.__egSave=()=>{try{localStorage.setItem('crystals.eg.v1',JSON.stringify(window.__egCfg))}catch(_){}};
 let egRun=0;
@@ -550,7 +552,7 @@ function egRetract(key){
       c.strokeStyle='rgba(255,100,0,'+(al*.35).toFixed(2)+')';c.lineWidth=wz*7;c.beginPath();c.moveTo(px,py);c.lineTo(tx,ty);c.stroke();
       c.strokeStyle='rgba('+cr+','+Math.round(cg*.8)+',20,'+(al*.9).toFixed(2)+')';c.lineWidth=wz*2.6;c.beginPath();c.moveTo(px,py);c.lineTo(tx,ty);c.stroke();
       c.strokeStyle='rgba('+cr+','+cg+','+Math.max(0,cb)+','+al.toFixed(2)+')';c.lineWidth=wz*1.2;c.beginPath();c.moveTo(px,py);c.lineTo(tx,ty);c.stroke();
-      const g=c.createRadialGradient(p.x,p.y,0,p.x,p.y,wz*9);g.addColorStop(0,'rgba(255,'+cg+','+Math.max(0,cb)+','+al.toFixed(2)+')');g.addColorStop(1,'rgba(255,100,0,0)');c.fillStyle=g;c.fillRect(p.x-wz*9,p.y-wz*9,wz*18,wz*18)}
+      c.globalAlpha=al;c.drawImage(glowSpr(u),p.x-wz*9,p.y-wz*9,wz*18,wz*18);c.globalAlpha=1}
     requestAnimationFrame(fr)}
   requestAnimationFrame(fr);
 }
@@ -1442,6 +1444,8 @@ function geoFor(i){
   if(geo[i])return geo[i];const d=buildGeo(CRYSTALS[i]),mk=a=>{const b=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,b);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(a),gl.STATIC_DRAW);return b};
   return geo[i]={pos:mk(d.pos),nrm:mk(d.nrm),bary:mk(d.bary),cen:mk(d.cen),count:d.count,planes:d.planes,verts:d.verts};
 }
+(function(){let n=0;const go=()=>{if(n>=CRYSTALS.length)return;try{geoFor(n)}catch(_){}n++;setTimeout(go,90)};   // build every crystal's glass mesh quietly in the background, so a fast swipe never has to
+  setTimeout(()=>{(window.requestIdleCallback||setTimeout)(go)},1800)})();
 function persp(f,a,n,fa){const t=1/Math.tan(f/2),m=new Float32Array(16);m[0]=t/a;m[5]=t;m[10]=(fa+n)/(n-fa);m[11]=-1;m[14]=2*fa*n/(n-fa);return m}
 const _mo=new Float32Array(16),_M1=new Float32Array(16),_M2=new Float32Array(16),_R9=new Float32Array(9);
 function rotU(R){_R9[0]=R[0];_R9[1]=R[3];_R9[2]=R[6];_R9[3]=R[1];_R9[4]=R[4];_R9[5]=R[7];_R9[6]=R[2];_R9[7]=R[5];_R9[8]=R[8];return _R9}
@@ -1452,11 +1456,12 @@ function rot3(yaw,pitch,roll){
   return m3([1,0,0,0,cp,-sp,0,sp,cp],m3([cr,-sr,0,sr,cr,0,0,0,1],[cy,0,sy,0,1,0,-sy,0,cy]));
 }
 function resize(){
-  const S=Math.min(innerWidth*1.12,innerHeight*.58),d=Math.min(window.devicePixelRatio||1,2.5)*(window.__qual||1);
-  if(egg.full){cv.style.width=innerWidth+'px';cv.style.height=innerHeight+'px';cv.width=Math.max(2,Math.round(innerWidth*d));cv.height=Math.max(2,Math.round(innerHeight*d))}
-  else{cv.style.width=cv.style.height=S+'px';cv.width=cv.height=Math.max(2,Math.round(S*d))}
+  const S=Math.min(innerWidth*1.12,innerHeight*.58),d=Math.min(window.devicePixelRatio||1,egg.full?2:2.5)*(window.__qual||1);   // the full-screen break view never needs more than 2x
+  const sz=(c,w,h)=>{w=Math.max(2,w);h=Math.max(2,h);if(c.width!==w)c.width=w;if(c.height!==h)c.height=h};   // resetting a canvas to the same size would reallocate it
+  if(egg.full){cv.style.width=innerWidth+'px';cv.style.height=innerHeight+'px';sz(cv,Math.round(innerWidth*d),Math.round(innerHeight*d))}
+  else{cv.style.width=cv.style.height=S+'px';const n=Math.round(S*d);sz(cv,n,n)}
   if(gl)gl.viewport(0,0,cv.width,cv.height);
-  const f=document.getElementById('eggfx');if(f){f.width=Math.round(innerWidth*d);f.height=Math.round(innerHeight*d)}
+  const f=document.getElementById('eggfx');if(f)sz(f,Math.round(innerWidth*d),Math.round(innerHeight*d))
 }
 resize();addEventListener('resize',resize);
 
@@ -2197,12 +2202,12 @@ function domeGeo(){   // blade tip: flat top, corners rounded to the phone's scr
 }
 window.__domeGeo=domeGeo;window.__corner=px=>{if(px>0&&px<200){window.__cornerR=px;domeGeo()}};
 domeGeo();addEventListener('resize',domeGeo);
-let fEma=.016,slowN=0;
+let fEma=.016,slowN=0,pePrev=0;
 function frame(now){
   const raw=(now-last)/1000;
   if(raw>0&&raw<.25&&!document.hidden){   // if the glass shader is too heavy for this phone, quietly draw it at a lower resolution
     fEma=fEma*.95+raw*.05;
-    if(fEma>.034&&(window.__qual||1)>.5){if(++slowN>150){window.__qual=Math.max(.5,(window.__qual||1)*.8);slowN=0;fEma=.016;resize()}}else slowN=Math.max(0,slowN-1);
+    if(fEma>.034&&(window.__qual||1)>.5){if(++slowN>70){window.__qual=Math.max(.5,(window.__qual||1)*.8);slowN=0;fEma=.016;resize()}}else slowN=Math.max(0,slowN-1);
   }
   const dt=Math.min(.05,Math.max(.001,raw));last=now;tN+=dt;
   const want=(on||igniting)?1:0;
@@ -2214,7 +2219,8 @@ function frame(now){
   }
   const p=V.p,e=ease(p);
   const rs=document.documentElement.style;
-  if(p>.003){blade.style.display='block';const pe=egg.cracks[sel]&&p>.03&&p<.97?p*(.9+.1*Math.random()):p;{const yc=pe*(innerHeight+dome.G)-dome.G;rs.setProperty('--yc',yc.toFixed(1)+'px')};rs.setProperty('--fo',(Math.pow(Math.sin(Math.PI*Math.min(1,p)),.8)*.95).toFixed(3))}else{blade.style.display='none';rs.setProperty('--fo','0')}
+  if(p>.003){blade.style.display='block';let pe=p;if(egg.cracks[sel]&&p>.03&&p<.97){const j=p*(.9+.1*Math.random());pe=want?Math.max(pePrev,j):Math.min(pePrev,j)}pePrev=pe;   // the unstable flicker may only ever move the blade the way it is going, never back and forth
+  {const yc=pe*(innerHeight+dome.G)-dome.G;rs.setProperty('--yc',yc.toFixed(1)+'px')};rs.setProperty('--fo',(Math.pow(Math.sin(Math.PI*Math.min(1,p)),.8)*.95).toFixed(3))}else{blade.style.display='none';rs.setProperty('--fo','0')}
   {const lit=p>.003;if(lit!==litOn){litOn=lit;document.documentElement.classList.toggle('lit',lit)}}
   aura.style.opacity=((1-Math.min(1,p*1.6))*(1-egg.dead)*(window.__auraMul==null?1:window.__auraMul)).toFixed(3);
   pick.style.opacity=(1-Math.min(1,p*2.4)).toFixed(3);pick.style.visibility=p>.5?'hidden':'visible';
@@ -2579,7 +2585,7 @@ requestAnimationFrame(frame);
   const ROWS=[['swing','Swing sound','How hard you must swing to make sound. Right: lighter swings count.'],['clash','Clash','How hard a hit must be to count as a clash, and to crack a resting crystal. Right: softer hits count.'],['stab','Stab','How sharp a forward thrust must be to count as a stab. Right: gentler thrusts count.'],['swipe','Swipe','How long a swipe must be to ignite or retract. Right: shorter swipes work.'],['tw2','Twist','How quick a twist must be to ignite (or retract). Slow turns never count. Right: gentler flicks work.'],['steamP','Steam pressure','How far Analog\'s steam travels straight into the screen before it starts bending with your tilt. Right: a longer straight run.'],['lp','Hold','How long to hold for the long power-on and the saber lock. Right: shorter hold.'],['drag','Drag angle','How far the blade tip must point down to start dragging. Right: less tilt needed.'],['crn','Screen corners','How round the blade tip is. Auto follows your phone, right is rounder.']];
   const sw=(k,t,d)=>'<div class="row sw"><div><b>'+t+'</b><small>'+d+'</small></div><button class="tg" data-k="'+k+'" role="switch" aria-checked="true" aria-label="'+t+'"><i></i></button></div>';
   let h='<div id="grab"></div><div class="hd"><h2>Settings</h2><button id="sDone">Done</button></div>';
-  h+=sw('bright','Max brightness','Full screen brightness while the saber is lit')+sw('vib','Vibration','Haptics that follow the sound')+sw('twist','Twist to ignite','Twist your phone fast, like a replica hilt, to turn the saber on')+sw('twistOff','Twist to retract','Twist the same way to turn it off again')+sw('tilt','Tilt reflections','Reflections and depth inside the crystal shift as you tilt your phone')+sw('droid','Training droid','A droid fires blaster bolts at you while the saber is lit. Listen for the shot and the rising whine, then tap just as it peaks. Too early and you miss.<span id="dbest"></span>');
+  h+=sw('bright','Max brightness','Full screen brightness while the saber is lit')+sw('vib','Vibration','Haptics that follow the sound')+sw('twist','Twist to ignite','Twist your phone fast, like a replica hilt, to turn the saber on')+sw('twistOff','Twist to retract','Twist the same way to turn it off again')+sw('fps','FPS counter','Show the frame rate in the top corner')+sw('tilt','Tilt reflections','Reflections and depth inside the crystal shift as you tilt your phone')+sw('droid','Training droid','A droid fires blaster bolts at you while the saber is lit. Listen for the shot and the rising whine, then tap just as it peaks. Too early and you miss.<span id="dbest"></span>');
   h+='<div class="row"><button class="btn" id="tv">Test vibration</button></div>';
   if(window.__openForge)h+='<div class="row"><button class="btn" id="forgeBtn">Forge a crystal</button><small>Fuse two crystals into a new one</small></div>';
   if(window.__openLab)h+='<div class="row"><button class="btn" id="labBtn">Haptic lab</button><small>Advanced vibration tests for this phone</small></div>';
@@ -2605,7 +2611,7 @@ requestAnimationFrame(frame);
   bg.addEventListener('click',e=>{if(e.target===bg)close()});
   dlg.addEventListener('click',e=>{
     if(e.target===dlg||e.target.closest('#rstNo')){closeDlg();return}
-    if(e.target.closest('#rstYes')){Object.assign(cfg,{bright:true,vib:true,swing:0,clash:0,stab:0,swipe:0,lp:0,drag:0,start:'Crispity',corner:0,crn:0,twist:true,twistOff:false,tw2:0,steamP:0,droid:false,tilt:true});saveCfg();if(window.__domeGeo)__domeGeo();sync();closeDlg();H.tick(.6,16)}
+    if(e.target.closest('#rstYes')){Object.assign(cfg,{bright:true,vib:true,swing:0,clash:0,stab:0,swipe:0,lp:0,drag:0,start:'Crispity',corner:0,crn:0,twist:true,twistOff:false,tw2:0,steamP:0,droid:false,tilt:true,fps:false});saveCfg();if(window.__fpsSet)__fpsSet(false);if(window.__domeGeo)__domeGeo();sync();closeDlg();H.tick(.6,16)}
   });
   sheet.addEventListener('click',e=>{
     if(e.target.closest('#sDone')){close();return}
@@ -2620,13 +2626,28 @@ requestAnimationFrame(frame);
       H.pre(700);setTimeout(()=>H.clash(.9),780);return;
     }
     const t=e.target.closest('.tg');if(!t)return;
-    const k=t.dataset.k;cfg[k]=!cfg[k];saveCfg();sync();
+    const k=t.dataset.k;cfg[k]=!cfg[k];saveCfg();sync();if(k==='fps'&&window.__fpsSet)__fpsSet(cfg.fps);
     if(k==='vib'){if(cfg.vib)H.tick(.6,16);else if(NAT){try{Native.feel(-1,0)}catch(_){}}}
   });
   sheet.addEventListener('input',e=>{
     const r=e.target;if(r.type!=='range')return;
     cfg[r.dataset.k]=+r.value;saveCfg();if(r.dataset.k==='crn'&&window.__domeGeo)__domeGeo();$('#sv_'+r.dataset.k).textContent=lab(r.dataset.k,+r.value);H.tick(.3,10);
   });
+})();
+</script>
+<script id="fpsScript">
+(function(){   // optional frame-rate readout: now, and the lowest / average / highest over the last 10 s; measured on every single frame
+  let el=null,on=false,raf=0,last=0,fr=[],lastShow=0,hz='';
+  function mk(){el=document.createElement('div');el.style.cssText='position:fixed;left:calc(env(safe-area-inset-left,0px) + 10px);top:calc(env(safe-area-inset-top,0px) + 8px);z-index:60;pointer-events:none;font:600 11px/1.45 ui-monospace,Menlo,monospace;letter-spacing:.03em;color:#9fffb0;background:rgba(0,0,0,.5);padding:6px 8px;border-radius:7px;opacity:0;transition:opacity .35s ease;font-variant-numeric:tabular-nums;white-space:pre';document.body.appendChild(el)}
+  function tick(t){if(!on)return;if(last){const dt=t-last;if(dt>0&&dt<1000)fr.push([t,dt])}last=t;
+    while(fr.length&&t-fr[0][0]>10000)fr.shift();
+    if(t-lastShow>=100&&fr.length>3){lastShow=t;let mn=1e9,mx=0,sum=0,rec=0,rt=0;for(let i=0;i<fr.length;i++){const d=fr[i][1];sum+=d;if(d<mn)mn=d;if(d>mx)mx=d;if(t-fr[i][0]<250){rec+=d;rt++}}
+      const now=rt?Math.round(1000*rt/rec):0,avg=Math.round(1000*fr.length/sum),lo=Math.round(1000/mx),hi=Math.round(1000/mn);
+      el.textContent=now+' FPS\nmin '+lo+'  avg '+avg+'  max '+hi+(hz?'\n'+hz:'');el.style.color=now>=Math.max(50,hi*.9)?'#9fffb0':now>=40?'#ffd36b':'#ff7a6b'}
+    raf=requestAnimationFrame(tick)}
+  window.__fpsSet=function(v){if(!el)mk();if(v&&!on){on=true;try{hz=window.Native&&Native.modes?Native.modes():''}catch(_){hz=''}last=0;fr=[];lastShow=0;el.textContent='-- FPS';requestAnimationFrame(()=>{el.style.opacity='1'});raf=requestAnimationFrame(tick)}
+    else if(!v&&on){on=false;cancelAnimationFrame(raf);el.style.opacity='0'}};
+  try{if(cfg.fps)window.__fpsSet(true)}catch(_){}
 })();
 </script>
 <script id="keepAwake">
@@ -2730,6 +2751,16 @@ requestAnimationFrame(frame);
   const rgb=h=>{const n=parseInt(h.slice(1),16);return[n>>16&255,n>>8&255,n&255]};
   const col=(a,al)=>'rgba('+a[0]+','+a[1]+','+a[2]+','+al.toFixed(3)+')';
   function envLv(){const E=window.__preEnv,x=(performance.now()-(window.__preT0||0))/1000/E.w,i=Math.max(0,Math.min(E.e.length-1,Math.floor(x))),f=Math.min(1,x-i),a=E.e[i],b=E.e[Math.min(E.e.length-1,i+1)];return Math.max(.04,Math.min(1,a+(b-a)*f))}
+  let tkKey='',tkS=[];   // the soft glow of every tick is drawn once and reused, so the gauge costs almost nothing per frame
+  function tickGeo(i,N,G,C2,tl){const f=i/(N-1),P=G(f),major=i%5===0,b=.55*(1-Math.abs(P[2])),tx=C2.x-P[0],ty=C2.y-P[1],tn=Math.hypot(tx,ty)||1;
+    let dx=P[2]*(1-b)+tx/tn*b,dy=P[3]*(1-b)+ty/tn*b;const dn=Math.hypot(dx,dy)||1;dx/=dn;dy/=dn;return{P,dx,dy,len:tl*(major?1.9:1),major,red:f>.78,lw:major?3.2:1.7}}
+  function tickSprites(N,G,C2,tl,main){
+    const key=W+'x'+H+'x'+dpr+'|'+main;if(key===tkKey)return tkS;tkKey=key;tkS=[];
+    for(let i=0;i<N;i++){const g=tickGeo(i,N,G,C2,tl),x0=g.P[0],y0=g.P[1],x1=x0+g.dx*g.len,y1=y0+g.dy*g.len,pad=(g.major?16:11)*2.4+g.lw,bx=Math.min(x0,x1)-pad,by=Math.min(y0,y1)-pad,bw=Math.abs(x1-x0)+2*pad,bh=Math.abs(y1-y0)+2*pad,off=bw+bh+50;
+      const mk=k=>{const cn=document.createElement('canvas');cn.width=Math.max(1,Math.ceil(bw*dpr));cn.height=Math.max(1,Math.ceil(bh*dpr));const x=cn.getContext('2d');x.scale(dpr,dpr);x.lineCap='round';
+        x.shadowColor=col(g.red?[255,70,20]:main,1);x.shadowBlur=(g.major?16:11)*k*dpr;x.shadowOffsetX=off*dpr;x.strokeStyle='#fff';x.lineWidth=g.lw;x.beginPath();x.moveTo(x0-bx-off,y0-by);x.lineTo(x1-bx-off,y1-by);x.stroke();x.stroke();return cn};
+      tkS.push({bx,by,bw,bh,dim:mk(.45),lit:mk(1)})}
+    return tkS}
   function engGeom(){   // the gauge path: up the left edge (only the top 2/5 of the screen), across the top, down the right edge
     const mx=W*.05,my=Math.max(22,H*.034),rc=Math.min(W*.2,64),yb=H*.46,Ls=yb-(my+rc),La=Math.PI/2*rc,Lt=W-2*mx-2*rc,L=2*Ls+2*La+Lt;
     return f=>{let s=Math.max(0,Math.min(1,f))*L;
@@ -2805,12 +2836,12 @@ requestAnimationFrame(frame);
     if(st==='eng'&&gaugeA>.01){   // tachometer lines along the left, top and right edges, with a tapered needle; every tick eases between unlit and lit
       const cf=window.__egCfg.pre,G=engGeom(),N=55,tl=Math.max(9,W*.03),nv=Math.max(0,Math.min(1,ndl+.012*engPul*Math.sin(engPh*3.1)));
       c2.save();c2.globalAlpha=gaugeA;c2.lineCap='round';
-      for(let i=0;i<N;i++){const f=i/(N-1),P=G(f),major=i%5===0,b=.55*(1-Math.abs(P[2])),tx=C.x-P[0],ty=C.y-P[1],tn=Math.hypot(tx,ty)||1;
-        let dx=P[2]*(1-b)+tx/tn*b,dy=P[3]*(1-b)+ty/tn*b;const dn=Math.hypot(dx,dy)||1;dx/=dn;dy/=dn;const len=tl*(major?1.9:1);
-        const lit=Math.max(0,Math.min(1,nv*(N-1)+1-i)),red=f>.78,un=.22+.2*cf.tach,lt=Math.min(1,(.8+.35*cf.tach)*(.85+.15*engPul)),a=un+(lt-un)*lit,lw=major?3.2:1.7;
-        c2.shadowColor=col(red?[255,70,20]:pc.main,Math.min(1,.35+.65*lit));c2.shadowBlur=(major?16:11)*(.45+.55*lit)*dpr;
-        c2.strokeStyle=col(red?[255,80,30]:pc.alt,a);c2.lineWidth=lw;c2.beginPath();c2.moveTo(P[0],P[1]);c2.lineTo(P[0]+dx*len,P[1]+dy*len);c2.stroke();c2.stroke()}   // second pass thickens the soft blur glow
-      c2.shadowBlur=0;c2.restore();
+      const TS=tickSprites(N,G,C,tl,pc.main);
+      for(let i=0;i<N;i++){const g=tickGeo(i,N,G,C,tl),P=g.P,sp=TS[i],lit=Math.max(0,Math.min(1,nv*(N-1)+1-i)),un=.22+.2*cf.tach,lt=Math.min(1,(.8+.35*cf.tach)*(.85+.15*engPul)),a=un+(lt-un)*lit,ga2=Math.min(1,a*(.35+.65*lit)*1.7);
+        if(lit<.995){c2.globalAlpha=gaugeA*ga2*(1-lit);c2.drawImage(sp.dim,sp.bx,sp.by,sp.bw,sp.bh)}
+        if(lit>.005){c2.globalAlpha=gaugeA*ga2*lit;c2.drawImage(sp.lit,sp.bx,sp.by,sp.bw,sp.bh)}
+        c2.globalAlpha=gaugeA;c2.strokeStyle=col(g.red?[255,80,30]:pc.alt,a);c2.lineWidth=g.lw;c2.beginPath();c2.moveTo(P[0],P[1]);c2.lineTo(P[0]+g.dx*g.len,P[1]+g.dy*g.len);c2.stroke()}
+      c2.restore();
     }
     if(stabOn&&st==='ovl'){   // ignition: the blade starts wild and unstable, the cold flicker at the screen edge settles over 3.7 s
       const u=1-(window.__stab-performance.now())/3700,sv=Math.max(0,1-u),fl2=Math.random()<.45+.4*sv?1:.25,ev=c2.createRadialGradient(W/2,H*.5,Math.min(W,H)*.25,W/2,H*.5,Math.max(W,H)*.78);
