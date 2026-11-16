@@ -219,13 +219,6 @@ jobs:
                   web.setBackgroundColor(Color.BLACK);
                   web.setOverScrollMode(View.OVER_SCROLL_NEVER);
                   setContentView(web);
-                  if (Build.VERSION.SDK_INT >= 35) {   // tell Android 15+ which frame rate this app wants (reflection: compileSdk is 34)
-                      try {
-                          java.lang.reflect.Method rf = View.class.getMethod("setRequestedFrameRate", float.class);
-                          rf.invoke(web, 165f);
-                          rf.invoke(getWindow().getDecorView(), 165f);
-                      } catch (Throwable ignored) {}
-                  }
                   WebSettings s = web.getSettings();
                   s.setJavaScriptEnabled(true);
                   s.setDomStorageEnabled(true);
