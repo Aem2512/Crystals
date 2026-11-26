@@ -399,17 +399,19 @@ jobs:
                       else if (mode == 2) vib.vibrate(e, attrsTouch);
                       else if (mode == 3) vib.vibrate(e);
                       else vib.vibrate(e, attrs);
-                  } catch (Throwable t) { }
+                  } catch (Throwable t) { vErr = "vibrate: " + t; }
               }
+
+              private volatile String vErr = "";
 
               /** code: 0 = tick, 1 = click, 2 = heavy click (the phone's own built-in effects). */
               private void fire(int code) {
-                  if (Build.VERSION.SDK_INT < 29) return;
+                  if (Build.VERSION.SDK_INT < 29) { vErr = "android<10"; return; }
                   int id = code == 2 ? VibrationEffect.EFFECT_HEAVY_CLICK
                           : (code == 1 ? VibrationEffect.EFFECT_CLICK : VibrationEffect.EFFECT_TICK);
                   try {
                       playAs(VibrationEffect.createPredefined(id), 0);
-                  } catch (Throwable ignored) { }
+                  } catch (Throwable t) { vErr = "fire: " + t; }
               }
 
               private void schedFire(final int code, long delay) {
@@ -618,9 +620,10 @@ jobs:
 
                   /** Blade clash. power 0..1: a firm single hit, or the full combo for hard clashes. */
                   @JavascriptInterface
-                  public void clash(double power) {
+                  public String clash(double power) {
                       try {
-                          if (vib == null) return;
+                          if (vib == null) return "no vibrator service";
+                          vErr = "";
                           gen++;
                           holdUntil = SystemClock.uptimeMillis() + 280;
                           fire(2);
@@ -630,7 +633,8 @@ jobs:
                               schedFire(0, 150);
                               schedFire(0, 190);
                           }
-                      } catch (Throwable ignored) { }
+                          return "ok sdk=" + Build.VERSION.SDK_INT + " hasVib=" + vib.hasVibrator() + " err=[" + vErr + "]";
+                      } catch (Throwable t) { return "exception " + t; }
                   }
 
                   /** One instant pulse (Crimson crackle). code 0 tick, 1 click, 2 heavy click. */

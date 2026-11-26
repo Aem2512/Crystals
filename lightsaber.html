@@ -328,9 +328,10 @@ function kyloIgnition(up){
     setTimeout(()=>{if(ctx)burst(1800+Math.random()*3800,.03+Math.random()*.06,.12+Math.random()*.22,'highpass')},tm)}
   setTimeout(()=>{if(ctx)burst(up?3200:1400,.28,up?.6:.45)},(up?dur*.82:dur*.72)*1000);
 }
+const DLOG=[];window.dlog=function(m){DLOG.push(((performance.now()/1000).toFixed(2))+'  '+m);if(DLOG.length>300)DLOG.shift()};let dlLast=0;
 function clash(power){
-  if(lockOn)return;
-  const now=performance.now();if(now-lastClash<350)return;lastClash=now;
+  if(lockOn){dlog('clash blocked: lock is on');return}
+  const now=performance.now();if(now-lastClash<350){dlog('clash blocked: cooldown');return}lastClash=now;dlog('clash fired power='+power.toFixed(2)+' vib='+cfg.vib);
   if(P.sample&&SB[P.fp+'c1'])playBuf(P.fp+'c'+(1+Math.floor(Math.random()*P.nc)),1);else{
   burst(3500,.35,.7*power,'highpass');burst(900,.25,.5*power);
   const o=ctx.createOscillator(),g=ctx.createGain(),t=ctx.currentTime;o.type='square';
@@ -436,6 +437,7 @@ function onMotion(e){
   if(a&&a.x!=null){ax=a.x;ay=a.y;az=a.z}
   else if(ig&&ig.x!=null){gx=gx*.92+ig.x*.08;gy=gy*.92+ig.y*.08;gz=gz*.92+ig.z*.08;ax=ig.x-gx;ay=ig.y-gy;az=ig.z-gz}
   const nowM=performance.now();
+  if(acc*sens('clash')>9&&nowM-dlLast>200){dlLast=nowM;dlog('motion acc='+acc.toFixed(1)+' jerk='+jerk.toFixed(1)+' need acc>'+(21/sens('clash')).toFixed(1)+' | on='+on+' lock='+lockOn+' p='+(window.V?window.V.p:'?').toString().slice(0,4)+' twQ='+(nowM>(window.__twQ||0)))}
   if(ay<-8)negY=nowM;   // a downward move that stops looks like an upward kick, so remember recent downward pushes
   // stab: a fast, mostly straight thrust toward the TOP of the phone (+y), not a swing, not a downward stop
   const calm=nowM>(window.__twQ||0)&&(window.V?window.V.p:1)>.98;   // no clash or stab during a twist, or while the blade is still igniting
@@ -810,7 +812,7 @@ const H={
   pre(ms){if(!cfg.vib)return;hapHold=performance.now()+ms+120;if(NAT)Native.charge(true,ms);else hap(hapRamp(true,ms),ms)},
   ramp(up){if(!cfg.vib)return;const ms=(up?P.igMs:P.rtMs)||(up?HAP_IGN_MS:HAP_RET_MS);hapHold=performance.now()+Math.max(ms+120,up&&P.hs?P.hs+900:0);if(NAT)Native.charge(!!up,ms);else hap(hapRamp(up,ms),ms)},
   tick(v,ms){if(!cfg.vib)return;const c=v>.8?2:(v>.5?1:0);if(NAT)Native.hit(c);else hap([Math.round(ms||14)],(ms||14)+10)},
-  clash(p){if(!cfg.vib)return;hapHold=performance.now()+300;if(NAT)Native.clash(p);else hapClash(p)},
+  clash(p){if(!cfg.vib){dlog('H.clash: vibration setting is off');return}hapHold=performance.now()+300;window.__dlClash=performance.now();if(NAT){try{dlog('Native.clash -> '+Native.clash(p))}catch(x){dlog('Native.clash threw '+x)}}else{dlog('H.clash: no Native bridge, using navigator.vibrate');hapClash(p)}},
   bright(on){if(on){rmsMin=1;rmsMax=0;rmsAvg=0;hapSm=0}else if(NAT)Native.feel(-1,0);if(NAT)Native.bright(!!on&&cfg.bright)}
 };
 setInterval(()=>{
@@ -828,7 +830,7 @@ setInterval(()=>{
     const eff=lv>=hp.hc?2:(lv>=hp.tc?1:0);
     const x=Math.min(1,lv/hp.tc),base=lv<hp.tc?HAP_IDLE_GAP+(hp.g0-HAP_IDLE_GAP)*Math.pow(x,1.2):hp.g0+(hp.g1-hp.g0)*lv;
     const gap=Math.round(base*(1+(Math.random()-.5)*2*hp.jit));
-    Native.feel(eff,gap);
+    Native.feel(eff,gap);if(performance.now()-(window.__dlClash||0)<500)dlog('feel() called right after clash');
     if(P.kylo&&Math.random()<.2*(.3+.7*act))H.tick(.5+Math.random()*.5);
   }else{hapSm+=(.35+.65*lv-hapSm)*.5;webLevel(hapSm)}
 },33);
@@ -1343,7 +1345,7 @@ precision highp float;
 #else
 precision mediump float;
 #endif
-varying vec3 vN,vP,vB,vD,vM;uniform vec3 uCol;uniform float uLit,uBoost,uCrN,uCrP,uPlN,uCore;uniform vec2 uTilt;uniform mat3 uRot;uniform vec4 uCk[6],uCo[6],uPl[32];
+varying vec3 vN,vP,vB,vD,vM;uniform vec3 uCol;uniform float uLit,uBoost,uCrN,uCrP,uPlN,uCore,uPat,uTime,uHum,uSw;uniform vec3 uCol2;uniform vec2 uTilt;uniform mat3 uRot;uniform vec4 uCk[6],uCo[6],uPl[32];
 float h31(vec3 p){p=fract(p*.1031);p+=dot(p,p.yzx+33.33);return fract((p.x+p.y)*p.z);}
 float vn(vec3 x){vec3 i=floor(x),f=fract(x);f=f*f*(3.-2.*f);
  return mix(mix(mix(h31(i),h31(i+vec3(1,0,0)),f.x),mix(h31(i+vec3(0,1,0)),h31(i+vec3(1,1,0)),f.x),f.y),
@@ -1374,6 +1376,41 @@ vec4 exitRay(vec3 p,vec3 r){   // where a ray inside the crystal (a convex hull 
   }
   return vec4(ne,tm);
 }
+float pat(vec3 p,float t,float k){
+  float r=0.;
+  if(k<.5){
+    vec3 q=p*2.6+vec3(0.,t*.25,t*.18);
+    float a=vn(q+vec3(vn(q*1.7+t*.3)*1.5));
+    r=pow(1.-abs(a*2.-1.),6.);
+  }else if(k<1.5){
+    vec3 q=p*1.8;
+    float c=cos(t*.5),sn=sin(t*.5);
+    q.xy=mat2(c,-sn,sn,c)*q.xy;
+    float w=fbm3(q+vec3(0.,0.,t*.2));
+    r=smoothstep(.45,.9,fbm3(q*1.6+w*2.2+t*.15));
+  }else if(k<2.5){
+    float a=atan(p.z,p.x)+t*.6;
+    float rr=length(p.xz);
+    r=pow(.5+.5*sin(a*3.+rr*9.-t*2.),10.)*smoothstep(1.,.2,rr);
+  }else if(k<3.5){
+    float a=atan(p.y,p.x);
+    r=pow(.5+.5*sin(a*7.+t*.8+vn(p*2.+t*.2)*3.),6.)*smoothstep(1.2,.1,length(p.xy));
+  }else if(k<4.5){
+    vec3 q=p*5.;
+    q.y-=t*.9;
+    vec3 i=floor(q);
+    vec3 f=fract(q)-.5;
+    float h=h31(i);
+    vec3 o=vec3(h31(i+1.3),h31(i+2.7),h31(i+4.1))-.5;
+    r=smoothstep(.2,0.,length(f-o*.6))*step(.5,h)*(.6+.4*sin(t*3.+h*20.));
+  }else if(k<5.5){
+    float n=vn(p*3.+vec3(0.,t*.8,0.)+vn(p*6.+t*2.));
+    r=pow(1.-abs(n*2.-1.),12.)*step(.35,vn(p*1.3+floor(t*3.)))*1.4;
+  }else{
+    r=pow(.5+.5*sin(length(p)*14.-t*3.5),8.);
+  }
+  return r;
+}
 void main(){
   vec3 Nv=normalize(vN),Nm=normalize(vM),Dv=normalize(vD+vec3(1e-5));
   float eb=1.-smoothstep(0.,.3,vB.x);
@@ -1401,7 +1438,7 @@ void main(){
   float Ls=max(dot(Nv,normalize(vec3(-.55,.7,.75))),0.)*.6+.4;
   vec3 scat=mix(uCol,vec3(1.),.45)*(dens*.32+vein*.95)*Ls;
   vec3 trans=envT*T*1.9+uCol*(core*.95+halo)*(1.+uLit*2.)+scat*(.3+.7*T)*.8;
-  if(uCore>.5){bool wide=uCore>1.5;float cg=exp(-dd*(wide?2.6:11.))*(.3+tg*.9);trans+=uCol*cg*uLit*(wide?3.1:3.4);if(wide)trans+=uCol*tg*uLit*.5;}   // lit: an opaque, bright core of the crystal's own colour that shines from inside out
+  if(uCore>.5){bool wide=uCore>1.5;float cg=exp(-dd*(wide?2.6:11.))*(.3+tg*.9);vec3 tone=mix(uCol2,uCol,clamp(dd*1.5,0.,1.));float hm=(.5+.5*uSw)*(.9+.2*uHum);trans+=tone*cg*uLit*(wide?3.1:3.4)*hm;if(wide)trans+=uCol*tg*uLit*.5*hm;float pv=pat(cp,uTime,uPat);trans+=mix(uCol,uCol2,.65)*pv*uLit*(1.4+tg*1.1)*(1.-dd*.45)*hm;}   // lit: an opaque, bright core of the crystal's own colour that shines from inside out
   float ve=pow(1.-smoothstep(0.,.07,vB.x),1.6);
   vec3 real=refl*F*2.3+trans*(1.-F)+uCol*ve*.55+vec3(.3)*ve*ve*.4;
   real=1.-exp(-real*1.15);
@@ -1435,7 +1472,7 @@ else{
   if(!gl.getProgramParameter(prog,gl.LINK_STATUS))showErr('GL link: '+gl.getProgramInfoLog(prog));
   gl.useProgram(prog);
   ['aPos','aNrm','aBary','aCen'].forEach(a=>{loc[a]=gl.getAttribLocation(prog,a);gl.enableVertexAttribArray(loc[a])});
-  ['uMVP','uRot','uCol','uLit','uBoost','uCrN','uCrP','uCk','uCo','uPl','uPlN','uTilt','uCore'].forEach(u=>loc[u]=gl.getUniformLocation(prog,u));
+  ['uMVP','uRot','uCol','uLit','uBoost','uCrN','uCrP','uCk','uCo','uPl','uPlN','uTilt','uCore','uPat','uCol2','uTime','uHum','uSw'].forEach(u=>loc[u]=gl.getUniformLocation(prog,u));
   gl.enable(gl.DEPTH_TEST);gl.enable(gl.CULL_FACE);gl.clearColor(0,0,0,0);
 }
 const _plf=new Float32Array(128);
@@ -2160,6 +2197,11 @@ egg.hit=()=>{   // one strong clash while resting
 };
 // ---------- frame ----------
 const m4=new Float32Array(16),PM=persp(35*Math.PI/180,1,.1,20);let last=performance.now();
+let swS=0,swT=0;
+function swLevel(){const n=performance.now(),dt=Math.min(.1,(n-swT)/1000);if(dt<.004)return swS;swT=n;const t=Math.max(0,Math.min(1,(swFx-1)/.2));swS+=(t-swS)*(1-Math.exp(-dt*(t>swS?9:2.2)));return swS}
+let hmMax=.05,hmSm=0,hmT=0;
+function humLevel(){const n=performance.now();if(n-hmT<4)return hmSm;hmT=n;try{if(!A||!A.an)return 0;const b=A.hb||(A.hb=new Float32Array(A.buf.length));A.an.getFloatTimeDomainData(b);let q=0;for(let i=0;i<b.length;i++)q+=b[i]*b[i];const r=Math.sqrt(q/b.length);hmMax=Math.max(r,hmMax*.998,.02);hmSm+=(Math.min(1,r/hmMax)-hmSm)*.25}catch(_){}return hmSm}
+const PATS={Analog:[0,[.6,.95,1]],Crispity:[1,[1,.55,.8]],Magnetic:[1,[.6,.4,1]],Mercenary:[0,[1,1,.8]],Masterless:[1,[1,.7,.3]],Noble:[0,[1,.95,.7]],Deadlink:[0,[.55,.3,1]],Seethe:[1,[1,.6,.2]],Grey:[0,[.9,.95,1]],Volatile:[1,[.7,1,.6]],Ra:[0,[1,.85,.4]],Apocalypse:[1,[1,.85,.2]],Exalted:[0,[1,.7,.3]],'Engine Grip':[1,[1,.5,.1]],Coda:[0,[.7,.9,1]]};
 function render(sc,fade,e,idx=shown,colx=colNow,quiet=false){
   if(!quiet){fade*=(egg.fo==null?1:egg.fo);cv.style.opacity=fade.toFixed(3)}
   if(!gl||(!quiet&&fade<.01))return;
@@ -2171,6 +2213,7 @@ function render(sc,fade,e,idx=shown,colx=colNow,quiet=false){
   gl.uniformMatrix3fv(loc.uRot,false,rotU(R));
   gl.uniform3f(loc.uCol,col[0],col[1],col[2]);gl.uniform1f(loc.uLit,e);gl.uniform1f(loc.uBoost,boost*(1-.62*egg.dead));
   gl.uniform1f(loc.uCore,2);
+  {const nm=CRYSTALS[idx]&&CRYSTALS[idx].n,pp=PATS[nm]||[0,[1,1,1]];gl.uniform1f(loc.uPat,pp[0]);gl.uniform3f(loc.uCol2,pp[1][0],pp[1][1],pp[1][2]);gl.uniform1f(loc.uTime,(performance.now()/1000)%1000);gl.uniform1f(loc.uHum,humLevel());gl.uniform1f(loc.uSw,swLevel());}
   const tl=cfg.tilt===false?[0,0]:(window.__tilt||[0,0]);gl.uniform2f(loc.uTilt,tl[0],tl[1]);setPlanes(gm);
   gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
   crackUniforms(quiet?-2:idx);
@@ -2598,6 +2641,7 @@ requestAnimationFrame(frame);
   h+='<div class="grp">Feel</div>';
   ROWS.forEach(r=>{const w=r[0]==='crn',n=w?13:7;h+='<div class="row"><div class="top"><b>'+r[1]+'</b><span id="sv_'+r[0]+'">Normal</span></div><small>'+r[2]+'</small><input type="range" min="'+(w?-6:-3)+'" max="'+(w?6:3)+'" step="1" value="0" data-k="'+r[0]+'" aria-label="'+r[1]+'"><div class="tk'+(w?' tk13':'')+'">'+'<i></i>'.repeat(n)+'</div></div>'});
   h+='<div class="grp">Crystals</div><div class="row"><div class="top"><b>Start crystal</b></div><small>The crystal shown when the app opens</small><div id="startGrid">'+CRYSTALS.map(k=>'<button class="pill" data-n="'+k.n+'" style="--k:'+k.c+'" aria-pressed="false"><i></i><span>'+k.n+'</span></button>').join('')+'</div></div><div class="row"><button class="btn" id="restoreBtn">Restore cracked crystals</button><small id="restoreSub"></small></div>';
+  h+='<div class="grp">Debug log</div><div class="row"><button class="btn" id="dlT">Test clash haptic</button> <button class="btn" id="dlS">Show log</button> <button class="btn" id="dlC">Copy log</button><pre id="dlP" style="display:none;white-space:pre-wrap;font-size:11px;max-height:240px;overflow:auto;margin-top:10px;color:#a9afc2"></pre></div>';
   h+='<div class="row" style="border:0;padding-top:22px"><button class="btn red" id="rst">Reset to defaults</button></div>';
   const sheet=$('#sheet'),bg=$('#sheetBg');sheet.innerHTML=h;
   const dlg=document.createElement('div');dlg.id='dlgBg';
@@ -2626,6 +2670,10 @@ requestAnimationFrame(frame);
     if(e.target.closest('#forgeBtn')){window.__openForge();return}
     if(e.target.closest('#restoreBtn')){if(window.__eggRestore){__eggRestore();syncRestore()}return}
     if(e.target.closest('#rst')){dlg.classList.add('show');return}
+    if(e.target.closest('#dlT')){dlog('--- manual test ---');dlog('cfg.vib='+cfg.vib+' NAT='+NAT+(NAT&&Native.info?' info: '+String(Native.info()).replace(/\n/g,'; '):''));H.clash(.9);const p=$('#dlP');if(p.style.display!=='none')p.textContent=DLOG.join('\n');return}
+    if(e.target.closest('#dlS')){const p=$('#dlP');p.style.display=p.style.display==='none'?'block':'none';p.textContent=DLOG.length?DLOG.join('\n'):'(empty)';return}
+    if(e.target.closest('#dlC')){const t=DLOG.join('\n'),b=$('#dlC');let ok=false;try{const ta=document.createElement('textarea');ta.value=t;ta.style.cssText='position:fixed;opacity:0';document.body.appendChild(ta);ta.select();ok=document.execCommand('copy');ta.remove()}catch(_){}
+      if(!ok&&navigator.clipboard)navigator.clipboard.writeText(t).catch(()=>{});b.textContent='Copied';setTimeout(()=>{b.textContent='Copy log'},1400);return}
     if(e.target.closest('#tv')){
       const b=$('#tv');
       if(!cfg.vib){b.textContent='Turn vibration on first';setTimeout(()=>{b.textContent='Test vibration'},1600);return}
@@ -2689,8 +2737,8 @@ requestAnimationFrame(frame);
     lvl+=(L-lvl)*Math.min(1,dt*14);gA+=((on?1:0)-gA)*Math.min(1,dt*(on?9:6));
     if(!on&&gA<.01&&!sp.length){cancelAnimationFrame(raf);raf=0;cv.style.display=cs.style.display='none';c.clearRect(0,0,W,H);sc.setTransform(1,0,0,1,0,0);sc.clearRect(0,0,cs.width,cs.height);return}
     if(ts-colT>250){colT=ts;col=rgb()}
-    // contact point: stays on one side edge and only slides up and down as the phone tilts
-    const tl=window.__tilt||[0,0],tgt=Math.max(-H*.3,Math.min(H*.3,-tl[1]*H*.3));Ys+=(tgt-Ys)*Math.min(1,dt*2.4);
+    // contact point: stays on one side edge and only slides up and down as the phone is rolled sideways like a steering wheel
+    const tl=window.__tilt||[0,0],tgt=Math.max(-H*.3,Math.min(H*.3,tl[0]*H*.3));Ys+=(tgt-Ys)*Math.min(1,dt*2.4);
     const Yl=H*.46+Ys,Yr=H*.46-Ys,vert=true;   // mirrored: when one side goes up the other goes down
     // every hit in the lock sound: a spike of heat, a ripple into the blade and a burst of sparks
     if(on&&L-pL>.1&&tS-lastOn>.09){lastOn=tS;pulse=Math.min(1,.55+L*.6);for(let i=0,n=5+Math.round(L*10);i<n;i++){spark(0,Yl,1,0,vert,1);spark(W,Yr,-1,0,vert,1)}}
