@@ -812,7 +812,7 @@ const H={
   pre(ms){if(!cfg.vib)return;hapHold=performance.now()+ms+120;if(NAT)Native.charge(true,ms);else hap(hapRamp(true,ms),ms)},
   ramp(up){if(!cfg.vib)return;const ms=(up?P.igMs:P.rtMs)||(up?HAP_IGN_MS:HAP_RET_MS);hapHold=performance.now()+Math.max(ms+120,up&&P.hs?P.hs+900:0);if(NAT)Native.charge(!!up,ms);else hap(hapRamp(up,ms),ms)},
   tick(v,ms){if(!cfg.vib)return;const c=v>.8?2:(v>.5?1:0);if(NAT)Native.hit(c);else hap([Math.round(ms||14)],(ms||14)+10)},
-  clash(p){if(!cfg.vib){dlog('H.clash: vibration setting is off');return}hapHold=performance.now()+300;window.__dlClash=performance.now();if(NAT){try{dlog('Native.clash -> '+Native.clash(p))}catch(x){dlog('Native.clash threw '+x)}}else{dlog('H.clash: no Native bridge, using navigator.vibrate');hapClash(p)}},
+  clash(p){if(!cfg.vib){dlog('H.clash: vibration setting is off');return}hapHold=performance.now()+360;window.__dlClash=performance.now();if(NAT){try{dlog('Native.clash -> '+Native.clash(p))}catch(x){dlog('Native.clash threw '+x)}}else{dlog('H.clash: no Native bridge, using navigator.vibrate');hapClash(p)}},
   bright(on){if(on){rmsMin=1;rmsMax=0;rmsAvg=0;hapSm=0}else if(NAT)Native.feel(-1,0);if(NAT)Native.bright(!!on&&cfg.bright)}
 };
 setInterval(()=>{
