@@ -58,7 +58,7 @@ jobs:
                   applicationId 'crystals.aem'
                   minSdk 26
                   targetSdk 34
-                  versionCode 304
+                  versionCode 305
                   versionName '3.0.3'
               }
               signingConfigs {
@@ -160,6 +160,7 @@ jobs:
               private HandlerThread ht;
               private Handler hh;                       // haptic timing thread
               private volatile long holdUntil = 0;      // ignition / clash own the motor until this time
+              private volatile long clashUntil = 0;     // no tick may cut a clash short
               private volatile int gen = 0;             // bumping this cancels scheduled pulses
               private volatile int feelEffect = -1;     // swing pulse type: 0 tick, 1 click, 2 heavy click, -1 off
               private volatile int feelGap = 30;        // ms between swing pulses
@@ -633,11 +634,13 @@ jobs:
                           if (vib == null) return "no vibrator service";
                           vErr = "";
                           gen++;
-                          holdUntil = SystemClock.uptimeMillis() + 330;
+                          clashUntil = SystemClock.uptimeMillis() + 400;
+                          holdUntil = clashUntil + 280;   // silence after the hit, so it stands out from the swing buzz
+                          vib.cancel();
                           if (hasAmp) {
                               int a = (int) Math.round(255 * Math.max(0.8, Math.min(1.0, power + 0.3)));
                               playAs(VibrationEffect.createWaveform(
-                                      new long[]{0, 55, 25, 50, 25, 45, 20, 70},
+                                      new long[]{40, 70, 25, 55, 25, 50, 20, 90},
                                       new int[]{0, a, 0, a, 0, a, 0, 255}, -1), 0);
                           } else {
                               fire(2);
@@ -653,7 +656,7 @@ jobs:
                   @JavascriptInterface
                   public void hit(int code) {
                       try {
-                          if (vib == null) return;
+                          if (vib == null || SystemClock.uptimeMillis() < clashUntil) return;
                           fire(code);
                       } catch (Throwable ignored) { }
                   }

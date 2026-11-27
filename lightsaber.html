@@ -18,8 +18,8 @@ button{font:inherit;color:#fff;-webkit-appearance:none;appearance:none;cursor:po
 #blade{position:fixed;inset:0;z-index:2;pointer-events:none;display:none;background:color-mix(in srgb,var(--c) 1.5%,#fff);clip-path:inset(calc(100% - var(--yc,0px)) 0 0 0 round var(--Re,54px) var(--Re,54px) 0 0)}
 #front{position:fixed;z-index:1;pointer-events:none;opacity:var(--fo,0);top:calc(100% - var(--yc,0px));left:0;right:0;bottom:0;border-radius:var(--Re,54px) var(--Re,54px) 0 0;box-shadow:0 0 var(--gw,40px) calc(var(--gw,40px)*.45) color-mix(in srgb,var(--c) var(--fm,75%),#fff)}
 #under{position:fixed;inset:0;z-index:1;pointer-events:none;opacity:0;background:color-mix(in srgb,var(--c) 38%,#000)}
-#core{position:absolute;inset:0;background:radial-gradient(ellipse 66% 46% at 50% 46%,#fff 0%,#fff 38%,rgba(255,255,255,0) 100%)}
-#edge{position:absolute;top:calc(100% - var(--yc,0px));left:0;right:0;bottom:0;border-radius:var(--Re,54px) var(--Re,54px) 0 0;
+#core{position:absolute;inset:0;will-change:opacity;background:radial-gradient(ellipse 66% 46% at 50% 46%,#fff 0%,#fff 38%,rgba(255,255,255,0) 100%)}
+#edge{will-change:opacity;position:absolute;top:calc(100% - var(--yc,0px));left:0;right:0;bottom:0;border-radius:var(--Re,54px) var(--Re,54px) 0 0;
 box-shadow:inset 0 0 36px 16px var(--r),inset 0 0 110px 46px var(--r),inset 0 0 220px 90px color-mix(in srgb,var(--r) 58%,#fff)}
 #gl,#gl2{position:fixed;left:50%;top:46%;transform:translate(-50%,-50%);z-index:5;pointer-events:none;filter:drop-shadow(0 0 34px color-mix(in srgb,var(--c) 52%,transparent))}
 #touch{position:fixed;inset:0;z-index:4;touch-action:none}
@@ -387,7 +387,12 @@ let S=null,SB={};const SBp={};
 const sm=x=>{x=Math.max(0,Math.min(1,x));return x*x*(3-2*x)};
 function loadSamples(fp){
   if(SBp[fp])return SBp[fp];
-  SBp[fp]=Promise.all(Object.entries(SAMPLES).filter(([k])=>k.startsWith(fp)).map(async([k,u])=>{const b=atob(u),a=new Uint8Array(b.length);for(let i=0;i<b.length;i++)a[i]=b.charCodeAt(i);SB[k]=await ctx.decodeAudioData(a.buffer)}));
+  SBp[fp]=(async()=>{const jobs=[];let t=performance.now();
+    for(const[k,u]of Object.entries(SAMPLES)){if(!k.startsWith(fp))continue;
+      const b=atob(u),a=new Uint8Array(b.length);for(let i=0;i<b.length;i++)a[i]=b.charCodeAt(i);
+      const j=ctx.decodeAudioData(a.buffer).then(d=>{SB[k]=d});j.catch(()=>{});jobs.push(j);
+      if(performance.now()-t>4){await new Promise(r=>setTimeout(r,0));t=performance.now()}}
+    await Promise.all(jobs)})();
   return SBp[fp];
 }
 function playBuf(k,v,r){window.__lastPlay=k;const s=ctx.createBufferSource(),g=ctx.createGain();s.buffer=SB[k];if(r||P.pitch)s.playbackRate.value=(r||1)*(P.pitch||1);g.gain.value=v;s.connect(g);g.connect(A.out);s.start();}
@@ -767,7 +772,7 @@ function doStab(p){
 // In a normal browser it falls back to navigator.vibrate.
 const NAT=!!(window.Native&&typeof window.Native.feel==='function');
 const canVib=NAT||!!navigator.vibrate;
-let hapHold=0;
+let hapHold=0,hapSoft=0;
 // Per-crystal swing feel, built from the phone's own tick / click / heavy-click effects:
 //  g0 = gap between pulses when idle (ms), g1 = gap at a full swing, tc / hc = how hard the sound must hit
 //  before pulses turn tick -> click -> heavy, jit = random timing wobble, roll (Hz) / rd = slow swell that follows the sound's rhythm.
@@ -812,7 +817,7 @@ const H={
   pre(ms){if(!cfg.vib)return;hapHold=performance.now()+ms+120;if(NAT)Native.charge(true,ms);else hap(hapRamp(true,ms),ms)},
   ramp(up){if(!cfg.vib)return;const ms=(up?P.igMs:P.rtMs)||(up?HAP_IGN_MS:HAP_RET_MS);hapHold=performance.now()+Math.max(ms+120,up&&P.hs?P.hs+900:0);if(NAT)Native.charge(!!up,ms);else hap(hapRamp(up,ms),ms)},
   tick(v,ms){if(!cfg.vib)return;const c=v>.8?2:(v>.5?1:0);if(NAT)Native.hit(c);else hap([Math.round(ms||14)],(ms||14)+10)},
-  clash(p){if(!cfg.vib){dlog('H.clash: vibration setting is off');return}hapHold=performance.now()+360;window.__dlClash=performance.now();if(NAT){try{dlog('Native.clash -> '+Native.clash(p))}catch(x){dlog('Native.clash threw '+x)}}else{dlog('H.clash: no Native bridge, using navigator.vibrate');hapClash(p)}},
+  clash(p){if(!cfg.vib){dlog('H.clash: vibration setting is off');return}hapHold=performance.now()+680;hapSoft=hapHold+350;window.__dlClash=performance.now();if(NAT){try{dlog('Native.clash -> '+Native.clash(p))}catch(x){dlog('Native.clash threw '+x)}}else{dlog('H.clash: no Native bridge, using navigator.vibrate');hapClash(p)}},
   bright(on){if(on){rmsMin=1;rmsMax=0;rmsAvg=0;hapSm=0}else if(NAT)Native.feel(-1,0);if(NAT)Native.bright(!!on&&cfg.bright)}
 };
 setInterval(()=>{
@@ -826,6 +831,7 @@ setInterval(()=>{
   if(P.kylo)lv+=flick*.4+(Math.random()-.5)*.3*act;
   lv=Math.max(0,Math.min(1,lv*HAP_SCALE));
   if(now<hapHold)return;
+  if(now<hapSoft)lv=Math.min(lv,hp.tc*.9);   // just after a clash: light ticks only
   if(NAT){
     const eff=lv>=hp.hc?2:(lv>=hp.tc?1:0);
     const x=Math.min(1,lv/hp.tc),base=lv<hp.tc?HAP_IDLE_GAP+(hp.g0-HAP_IDLE_GAP)*Math.pow(x,1.2):hp.g0+(hp.g1-hp.g0)*lv;
@@ -2799,23 +2805,59 @@ requestAnimationFrame(frame);
     'Engine Grip':{ig:{ms:1500,m:'fire',a:[255,190,40],b:[255,110,0]},sw:{m:'ripple',a:[255,110,0],b:[255,30,0]}}
   };
   const cv=document.createElement('canvas');cv.id='bfx';cv.style.cssText='position:fixed;left:0;top:0;width:100%;height:100%;z-index:3;pointer-events:none';document.body.appendChild(cv);
-  const c=cv.getContext('2d');let W=0,H=0,run=false,parts=[],bolts=[],bT=0,last=0,fT=0;
+  const c=cv.getContext('2d');let W=0,H=0,run=false,parts=[],last=0;
   const size=()=>{W=cv.width=innerWidth;H=cv.height=innerHeight};size();addEventListener('resize',size);
   const col=(a,al)=>'rgba('+a[0]+','+a[1]+','+a[2]+','+Math.max(0,Math.min(1,al)).toFixed(3)+')';
   const vig=(a,al,r0)=>{const g=c.createRadialGradient(W/2,H*.5,Math.min(W,H)*(r0||.25),W/2,H*.5,Math.max(W,H)*.78);g.addColorStop(0,col(a,0));g.addColorStop(1,col(a,al));c.fillStyle=g;c.fillRect(0,0,W,H)};
   const glow=(a,al,h)=>{c.save();c.translate(W/2,H);c.scale(W*.9,Math.max(2,H*h));const g=c.createRadialGradient(0,0,0,0,0,1);g.addColorStop(0,col(a,al));g.addColorStop(1,col(a,0));c.fillStyle=g;c.fillRect(-1,-1.2,2,1.2);c.restore()};
-  function bolt(a){   // one jagged bolt from the top edge down to the emitter
-    let x=W*(.15+.7*Math.random()),y=0;const ex=W*(.4+.2*Math.random()),ey=H,pts=[[x,y]];
-    while(y<ey){y+=H*(.04+.07*Math.random());x+=(ex-x)*.12+(Math.random()-.5)*W*.16;pts.push([x,Math.min(y,ey)])}
-    return{p:pts,l:0,L:.09+.07*Math.random(),a:a}}
+  // Deadlink's lightning: its own sharp canvas. A storm veil falls, forked strikes crawl down to the emitter, restrike and burn out.
+  const lc=document.createElement('canvas');lc.id='dlfx';lc.style.cssText='position:fixed;left:0;top:0;width:100%;height:100%;z-index:3;pointer-events:none';document.body.appendChild(lc);
+  const lx=lc.getContext('2d');let ld=1,strikes=[],lNext=0,lIg=0,veil=0,lRun=false;
+  const lSize=()=>{ld=Math.min(devicePixelRatio||1,2);lc.width=Math.round(innerWidth*ld);lc.height=Math.round(innerHeight*ld)};lSize();addEventListener('resize',lSize);
+  const AT=[0,140,300,500],PW=[.75,.65,.85,1.35];   // when each strike lands (ms) and how big it is
+  function jag(a,b,disp,depth){   // midpoint displacement: big bends with fine crackle on top
+    let pts=[a,b];
+    for(let d=0;d<depth;d++){const o=[pts[0]];for(let i=1;i<pts.length;i++){const p=pts[i-1],q=pts[i],dx=q[0]-p[0],dy=q[1]-p[1],l=Math.hypot(dx,dy)||1,j=(Math.random()-.5)*disp;o.push([(p[0]+q[0])/2-dy/l*j,(p[1]+q[1])/2+dx/l*j],q)}pts=o;disp*=.54}
+    return pts}
+  function mkStrike(pw){
+    const x0=W*(.08+.84*Math.random()),ex=W*(.42+.16*Math.random()),main=jag([x0,-20],[ex,H+10],W*.42,7),br=[];
+    for(let i=0,n=3+Math.round(3*pw);i<n;i++){const k=Math.floor(main.length*(.08+.7*Math.random())),a=main[k],sg=Math.random()<.5?-1:1,len=H*(.08+.2*Math.random())*pw,an=Math.PI/2+sg*(.45+.7*Math.random()),
+      b=[a[0]+Math.cos(an)*len,a[1]+Math.sin(an)*len],pts=jag(a,b,len*.38,5);br.push({pts,at:k/main.length,z:.5});
+      if(Math.random()<.55){const m=pts[Math.floor(pts.length*.5)],a2=an-sg*(.6+.6*Math.random()),l2=len*.45;br.push({pts:jag(m,[m[0]+Math.cos(a2)*l2,m[1]+Math.sin(a2)*l2],l2*.4,4),at:Math.min(1,k/main.length+.08),z:.28})}}
+    return{main,br,x0,ex,pw,l:0,L:.26+.16*pw}}
+  const LAY=[[26,'105,0,255',.13],[14,'150,10,255',.24],[7,'215,30,255',.6],[3.2,'255,140,255',.95],[1.3,'255,255,255',1]];
+  function path(pts,upto){lx.beginPath();const n=Math.max(2,Math.ceil(pts.length*upto));lx.moveTo(pts[0][0],pts[0][1]);for(let i=1;i<n&&i<pts.length;i++)lx.lineTo(pts[i][0],pts[i][1])}
+  function drawStrike(q){
+    const u=q.l/q.L,lead=Math.min(1,q.l/.065),re=q.l<.065?.8:(Math.sin(q.l*95)>-.35?1:.35),al=Math.pow(1-u,1.25)*re;
+    for(const[w,c,a]of LAY){
+      lx.strokeStyle='rgba('+c+','+(a*al).toFixed(3)+')';
+      lx.lineWidth=Math.max(.6,w*q.pw*(1-.35*u));path(q.main,lead);lx.stroke();
+      for(const b of q.br){if(lead<b.at)continue;lx.lineWidth=Math.max(.5,w*q.pw*b.z*(1-.35*u));path(b.pts,Math.min(1,(q.l-.065*b.at)/.05));lx.stroke()}}
+    const glowAt=(x,y,r,a)=>{const g=lx.createRadialGradient(x,y,0,x,y,r);g.addColorStop(0,'rgba(255,235,255,'+a.toFixed(3)+')');g.addColorStop(.3,'rgba(210,60,255,'+(a*.6).toFixed(3)+')');g.addColorStop(1,'rgba(120,0,255,0)');lx.fillStyle=g;lx.fillRect(x-r,y-r,r*2,r*2)};
+    glowAt(q.x0,0,W*.55*q.pw,.65*al);if(lead>=1)glowAt(q.ex,H,W*.8*q.pw,.9*al)}
+  function deadFx(isD,ag,dt){
+    const live=isD&&ag>=0&&ag<1000;
+    if(live&&lIg!==window.__vxIg){lIg=window.__vxIg;lNext=0;strikes=[]}
+    if(live)while(lNext<AT.length&&ag>=AT[lNext]){strikes.push(mkStrike(PW[lNext]));lNext++}
+    const want=live&&ag<620?1:0;veil+=(want-veil)*(1-Math.exp(-dt*(want?28:7)));
+    if(!live&&veil<.005&&!strikes.length){if(lRun){lx.setTransform(1,0,0,1,0,0);lx.clearRect(0,0,lc.width,lc.height);lRun=false}return}
+    lRun=true;lx.setTransform(ld,0,0,ld,0,0);lx.clearRect(0,0,W,H);
+    let flash=0;for(const q of strikes)flash=Math.max(flash,(1-q.l/q.L)*(q.l>.05?1:0)*q.pw);
+    const fade=isD&&on?1:Math.max(0,1-(performance.now()-(window.__vxRt||0))/250);
+    lx.globalAlpha=fade;
+    if(veil>.005){lx.fillStyle='rgba(14,0,34,'+(veil*Math.max(.25,.78-.34*flash)).toFixed(3)+')';lx.fillRect(0,0,W,H)}
+    lx.lineCap='round';lx.lineJoin='round';
+    for(let i=strikes.length-1;i>=0;i--){const q=strikes[i];if(q.l>=q.L){strikes.splice(i,1);continue}drawStrike(q);q.l+=dt}
+    lx.globalAlpha=1}
   function frame(t){
     requestAnimationFrame(frame);
     const k=CRYSTALS[sel],sp=VX[k.n];
-    if(!sp){if(run){c.clearRect(0,0,W,H);run=false}return}
+    deadFx(k.n==='Deadlink',on&&window.__vxIg?performance.now()-window.__vxIg:-1,Math.min(.05,(t-last)/1000||.016));
+    if(!sp){last=t;if(run){c.clearRect(0,0,W,H);run=false}return}
     const now=performance.now(),dt=Math.min(.05,(t-last)/1000||.016);last=t;
     const ag=on&&window.__vxIg?now-window.__vxIg:-1,ar=!on&&window.__vxRt?now-window.__vxRt:-1;
     const sw=on&&V.p>.9?Math.min(1,swingSm):0,ig=sp.ig&&ag>=0&&ag<sp.ig.ms,rt=sp.rt&&ar>=0&&ar<sp.rt.ms,sv=sp.sw&&sw>.12,id=sp.idle&&on&&V.p>.9;
-    if(!ig&&!rt&&!sv&&!id&&!parts.length&&!bolts.length){if(run){c.clearRect(0,0,W,H);run=false}return}
+    if(!ig&&!rt&&!sv&&!id&&!parts.length){if(run){c.clearRect(0,0,W,H);run=false}return}
     run=true;c.globalCompositeOperation='source-over';c.clearRect(0,0,W,H);
     const q=ig?sp.ig:rt?sp.rt:null,u=q?(ig?ag:ar)/q.ms:0,s=1-u;
     if(q){
@@ -2836,10 +2878,8 @@ requestAnimationFrame(frame);
       }else if(q.m==='charge'){   // dark veil that lifts, then a bright burst
         const vt=1040/q.ms;if(u<vt){c.fillStyle=col(A,.6*(1-u/vt));c.fillRect(0,0,W,H)}
         else{c.globalCompositeOperation='lighter';const f=1-(u-vt)/(1-vt),g=c.createRadialGradient(W/2,H*.5,0,W/2,H*.5,Math.max(W,H)*.8);g.addColorStop(0,col(B,.5*f*f));g.addColorStop(1,col(B,0));c.fillStyle=g;c.fillRect(0,0,W,H);glow(B,.6*f,.4)}
-      }else if(q.m==='bolt'){   // lightning strike ignition, then it settles unstable
-        c.globalCompositeOperation='lighter';const bu=ag/700;
-        if(bu<1&&bu>=0){if(now>bT){bT=now+70+Math.random()*60;bolts.push(bolt(Math.random()<.5?A:[255,255,255]),bolt(A))}
-          if(bu>.5&&bu<.62){c.fillStyle='rgba(255,255,255,.45)';c.fillRect(0,0,W,H)}}
+      }else if(q.m==='bolt'){   // the strikes are drawn by deadFx; this is the unstable glow that settles afterwards
+        c.globalCompositeOperation='lighter';
         vig(Math.random()<.5?A:B,(.03+.28*s)*(Math.random()<.45+.4*s?1:.25));
       }
     }
@@ -2850,9 +2890,6 @@ requestAnimationFrame(frame);
         g.addColorStop(0,col(cc,0));g.addColorStop(.5,col(cc,al));g.addColorStop(1,col(cc,0));c.fillStyle=g;c.fillRect(0,y-h,W,h*2)}
         vig(A,.12*sw,.3)}}
     if(id){const b=.5+.5*Math.sin(now*6.2832/7500-1.57);glow(sp.idle.a,.12+.25*b,.1+.12*b)}
-    for(let i=bolts.length-1;i>=0;i--){const b=bolts[i];b.l+=dt;if(b.l>=b.L){bolts.splice(i,1);continue}const al=1-b.l/b.L;
-      c.lineJoin='round';c.strokeStyle=col(b.a,.35*al);c.lineWidth=7;c.beginPath();b.p.forEach((p,j)=>j?c.lineTo(p[0],p[1]):c.moveTo(p[0],p[1]));c.stroke();
-      c.strokeStyle='rgba(255,255,255,'+(.9*al).toFixed(2)+')';c.lineWidth=1.8;c.stroke()}
     c.lineCap='round';
     for(let i=parts.length-1;i>=0;i--){const p=parts[i];p.l+=dt;if(p.l>=p.L||p.y<-10){parts.splice(i,1);continue}
       p.vy+=p.g*dt;const px=p.x,py=p.y;p.x+=p.vx*dt;p.y+=p.vy*dt;const al=1-p.l/p.L;
