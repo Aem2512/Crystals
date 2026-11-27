@@ -2759,7 +2759,8 @@ requestAnimationFrame(frame);
       const rr2=H*(.12+.16*it),g2=c.createRadialGradient(0,0,0,0,0,rr2);g2.addColorStop(0,'rgba(255,255,255,'+Math.min(1,(.55+.4*nzE)*it).toFixed(3)+')');g2.addColorStop(1,'rgba('+pal[2]+',0)');c.fillStyle=g2;c.fillRect(-rr2,-rr2,rr2*2,rr2*2);c.restore();
       }
       // the inner core flashes with the sound too
-      const n=.55+.3*Math.sin(tS*2.7)+.15*Math.sin(tS*4.3+1),a=gA*(.45+.5*lvl)*(.55+.65*n);   // slow flicker of the white coreif(a>.004){const cg=c.createRadialGradient(W/2,H*.46,0,W/2,H*.46,H*(.18+.36*lvl+.07*n));cg.addColorStop(0,'rgba(255,255,255,'+Math.min(1,a).toFixed(3)+')');cg.addColorStop(.6,'rgba(255,255,255,'+(a*.35).toFixed(3)+')');cg.addColorStop(1,'rgba(255,255,255,0)');c.save();c.translate(W/2,H*.46);c.scale(.62,1);c.translate(-W/2,-H*.46);c.fillStyle=cg;c.fillRect(-W,0,W*3,H);c.restore()}
+      const n=.55+.3*Math.sin(tS*2.7)+.15*Math.sin(tS*4.3+1),a=gA*(.45+.5*lvl)*(.55+.65*n);   // slow flicker of the white core
+      if(a>.004){const cg=c.createRadialGradient(W/2,H*.46,0,W/2,H*.46,H*(.18+.36*lvl+.07*n));cg.addColorStop(0,'rgba(255,255,255,'+Math.min(1,a).toFixed(3)+')');cg.addColorStop(.6,'rgba(255,255,255,'+(a*.35).toFixed(3)+')');cg.addColorStop(1,'rgba(255,255,255,0)');c.save();c.translate(W/2,H*.46);c.scale(.62,1);c.translate(-W/2,-H*.46);c.fillStyle=cg;c.fillRect(-W,0,W*3,H);c.restore()}
       c.globalAlpha=1}
     // sparks: the same white / orange / red streaks the saber drag throws off
     sc.setTransform(1,0,0,1,0,0);sc.clearRect(0,0,cs.width,cs.height);sc.setTransform(sd,0,0,sd,0,0);sc.globalCompositeOperation='lighter';sc.lineCap='round';

@@ -58,7 +58,7 @@ jobs:
                   applicationId 'crystals.aem'
                   minSdk 26
                   targetSdk 34
-                  versionCode 303
+                  versionCode 304
                   versionName '3.0.3'
               }
               signingConfigs {
