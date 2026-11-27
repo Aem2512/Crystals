@@ -58,7 +58,7 @@ jobs:
                   applicationId 'crystals.aem'
                   minSdk 26
                   targetSdk 34
-                  versionCode 305
+                  versionCode 306
                   versionName '3.0.3'
               }
               signingConfigs {
@@ -634,21 +634,20 @@ jobs:
                           if (vib == null) return "no vibrator service";
                           vErr = "";
                           gen++;
-                          clashUntil = SystemClock.uptimeMillis() + 400;
-                          holdUntil = clashUntil + 280;   // silence after the hit, so it stands out from the swing buzz
-                          vib.cancel();
+                          clashUntil = SystemClock.uptimeMillis() + 340;
+                          holdUntil = clashUntil;
                           if (hasAmp) {
                               int a = (int) Math.round(255 * Math.max(0.8, Math.min(1.0, power + 0.3)));
                               playAs(VibrationEffect.createWaveform(
-                                      new long[]{40, 70, 25, 55, 25, 50, 20, 90},
-                                      new int[]{0, a, 0, a, 0, a, 0, 255}, -1), 0);
+                                      new long[]{0, 70, 25, 55, 25, 50, 20, 90},
+                                      new int[]{0, 255, 0, a, 0, a, 0, 255}, -1), 1);   // alarm channel: the highest priority, so the swing buzz cannot swallow it
                           } else {
                               fire(2);
                               schedFire(2, 45);
                               schedFire(2, 95);
                               schedFire(1, 150);
                           }
-                          return "ok sdk=" + Build.VERSION.SDK_INT + " hasVib=" + vib.hasVibrator() + " err=[" + vErr + "]";
+                          return "ok alarm-channel sdk=" + Build.VERSION.SDK_INT + " hasVib=" + vib.hasVibrator() + " err=[" + vErr + "]";
                       } catch (Throwable t) { return "exception " + t; }
                   }
 

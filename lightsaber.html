@@ -332,6 +332,7 @@ const DLOG=[];window.dlog=function(m){DLOG.push(((performance.now()/1000).toFixe
 function clash(power){
   if(lockOn){dlog('clash blocked: lock is on');return}
   const now=performance.now();if(now-lastClash<350){dlog('clash blocked: cooldown');return}lastClash=now;dlog('clash fired power='+power.toFixed(2)+' vib='+cfg.vib);
+  H.clash(power);   // first of all, so the hit is felt the instant it is detected
   if(P.sample&&SB[P.fp+'c1'])playBuf(P.fp+'c'+(1+Math.floor(Math.random()*P.nc)),1);else{
   burst(3500,.35,.7*power,'highpass');burst(900,.25,.5*power);
   const o=ctx.createOscillator(),g=ctx.createGain(),t=ctx.currentTime;o.type='square';
@@ -339,7 +340,7 @@ function clash(power){
   g.gain.setValueAtTime(.4*power,t);g.gain.exponentialRampToValueAtTime(.001,t+.25);
   o.connect(g);g.connect(A.out);o.start(t);o.stop(t+.3);}
   whiteFlash(.84,.42,fxCol('clash'));
-  H.clash(power);if(window.gemKick)gemKick(power);
+  if(window.gemKick)gemKick(power);
 }
 function resetFx(){const b=$('#blade'),c=$('#core'),e=$('#edge');if(!b)return;$('#under').style.opacity=0;b.style.opacity='';c.style.transform='';c.style.opacity='';e.style.opacity='';e.style.transform='';swFx=1}
 // Kylo's unstable core: real, jagged flicker. The whole lit screen strobes between bright and dim.
@@ -395,6 +396,10 @@ function loadSamples(fp){
     await Promise.all(jobs)})();
   return SBp[fp];
 }
+setTimeout(async()=>{for(const k of CRYSTALS){if(!k.sample)continue;
+  while(on||igniting||preing||window.__swapBusy||document.hidden)await new Promise(r=>setTimeout(r,400));
+  try{initAudio();await loadSamples(k.fp)}catch(_){}
+  await new Promise(r=>setTimeout(r,120))}},2500);
 function playBuf(k,v,r){window.__lastPlay=k;const s=ctx.createBufferSource(),g=ctx.createGain();s.buffer=SB[k];if(r||P.pitch)s.playbackRate.value=(r||1)*(P.pitch||1);g.gain.value=v;s.connect(g);g.connect(A.out);s.start();}
 function mkLoop(k){const s=ctx.createBufferSource(),g=ctx.createGain();s.buffer=SB[k];s.loop=true;if(P.pitch)s.playbackRate.value=P.pitch;g.gain.value=0;s.connect(g);g.connect(A.out);s.start();return{s,g}}
 function killLoop(x){if(!x)return;x.g.gain.setTargetAtTime(0,ctx.currentTime,.08);setTimeout(()=>{try{x.s.stop()}catch(_){}},900)}
@@ -772,7 +777,7 @@ function doStab(p){
 // In a normal browser it falls back to navigator.vibrate.
 const NAT=!!(window.Native&&typeof window.Native.feel==='function');
 const canVib=NAT||!!navigator.vibrate;
-let hapHold=0,hapSoft=0;
+let hapHold=0;
 // Per-crystal swing feel, built from the phone's own tick / click / heavy-click effects:
 //  g0 = gap between pulses when idle (ms), g1 = gap at a full swing, tc / hc = how hard the sound must hit
 //  before pulses turn tick -> click -> heavy, jit = random timing wobble, roll (Hz) / rd = slow swell that follows the sound's rhythm.
@@ -817,7 +822,7 @@ const H={
   pre(ms){if(!cfg.vib)return;hapHold=performance.now()+ms+120;if(NAT)Native.charge(true,ms);else hap(hapRamp(true,ms),ms)},
   ramp(up){if(!cfg.vib)return;const ms=(up?P.igMs:P.rtMs)||(up?HAP_IGN_MS:HAP_RET_MS);hapHold=performance.now()+Math.max(ms+120,up&&P.hs?P.hs+900:0);if(NAT)Native.charge(!!up,ms);else hap(hapRamp(up,ms),ms)},
   tick(v,ms){if(!cfg.vib)return;const c=v>.8?2:(v>.5?1:0);if(NAT)Native.hit(c);else hap([Math.round(ms||14)],(ms||14)+10)},
-  clash(p){if(!cfg.vib){dlog('H.clash: vibration setting is off');return}hapHold=performance.now()+680;hapSoft=hapHold+350;window.__dlClash=performance.now();if(NAT){try{dlog('Native.clash -> '+Native.clash(p))}catch(x){dlog('Native.clash threw '+x)}}else{dlog('H.clash: no Native bridge, using navigator.vibrate');hapClash(p)}},
+  clash(p){if(!cfg.vib){dlog('H.clash: vibration setting is off');return}hapHold=performance.now()+340;window.__dlClash=performance.now();if(NAT){try{dlog('Native.clash -> '+Native.clash(p))}catch(x){dlog('Native.clash threw '+x)}}else{dlog('H.clash: no Native bridge, using navigator.vibrate');hapClash(p)}},
   bright(on){if(on){rmsMin=1;rmsMax=0;rmsAvg=0;hapSm=0}else if(NAT)Native.feel(-1,0);if(NAT)Native.bright(!!on&&cfg.bright)}
 };
 setInterval(()=>{
@@ -831,7 +836,6 @@ setInterval(()=>{
   if(P.kylo)lv+=flick*.4+(Math.random()-.5)*.3*act;
   lv=Math.max(0,Math.min(1,lv*HAP_SCALE));
   if(now<hapHold)return;
-  if(now<hapSoft)lv=Math.min(lv,hp.tc*.9);   // just after a clash: light ticks only
   if(NAT){
     const eff=lv>=hp.hc?2:(lv>=hp.tc?1:0);
     const x=Math.min(1,lv/hp.tc),base=lv<hp.tc?HAP_IDLE_GAP+(hp.g0-HAP_IDLE_GAP)*Math.pow(x,1.2):hp.g0+(hp.g1-hp.g0)*lv;
@@ -2810,45 +2814,59 @@ requestAnimationFrame(frame);
   const col=(a,al)=>'rgba('+a[0]+','+a[1]+','+a[2]+','+Math.max(0,Math.min(1,al)).toFixed(3)+')';
   const vig=(a,al,r0)=>{const g=c.createRadialGradient(W/2,H*.5,Math.min(W,H)*(r0||.25),W/2,H*.5,Math.max(W,H)*.78);g.addColorStop(0,col(a,0));g.addColorStop(1,col(a,al));c.fillStyle=g;c.fillRect(0,0,W,H)};
   const glow=(a,al,h)=>{c.save();c.translate(W/2,H);c.scale(W*.9,Math.max(2,H*h));const g=c.createRadialGradient(0,0,0,0,0,1);g.addColorStop(0,col(a,al));g.addColorStop(1,col(a,0));c.fillStyle=g;c.fillRect(-1,-1.2,2,1.2);c.restore()};
-  // Deadlink's lightning: its own sharp canvas. A storm veil falls, forked strikes crawl down to the emitter, restrike and burn out.
-  const lc=document.createElement('canvas');lc.id='dlfx';lc.style.cssText='position:fixed;left:0;top:0;width:100%;height:100%;z-index:3;pointer-events:none';document.body.appendChild(lc);
-  const lx=lc.getContext('2d');let ld=1,strikes=[],lNext=0,lIg=0,veil=0,lRun=false;
-  const lSize=()=>{ld=Math.min(devicePixelRatio||1,2);lc.width=Math.round(innerWidth*ld);lc.height=Math.round(innerHeight*ld)};lSize();addEventListener('resize',lSize);
-  const AT=[0,140,300,500],PW=[.75,.65,.85,1.35];   // when each strike lands (ms) and how big it is
+  // Deadlink's lightning: it bursts out of the crystal. A storm veil falls behind, forked searing strikes leap from the glass to the screen edges.
+  const mkCv=(id,z)=>{const e=document.createElement('canvas');e.id=id;e.style.cssText='position:fixed;left:0;top:0;width:100%;height:100%;z-index:'+z+';pointer-events:none';document.body.appendChild(e);return e};
+  const lc=mkCv('dlfx',3),bc=mkCv('dlbolt',5),gc=document.createElement('canvas'),gb=document.createElement('canvas'),bb=gb.getContext('2d'),lx=lc.getContext('2d'),bx=bc.getContext('2d'),gx=gc.getContext('2d');
+  let ld=1,strikes=[],lNext=0,lIg=0,veil=0,lRun=false;const GS_=1/8;   // the bloom is drawn small and stretched, which makes it soft and cheap
+  const lSize=()=>{ld=Math.min(devicePixelRatio||1,2);for(const e of[lc,bc]){e.width=Math.round(innerWidth*ld);e.height=Math.round(innerHeight*ld)}gc.width=gb.width=Math.ceil(innerWidth*GS_);gc.height=gb.height=Math.ceil(innerHeight*GS_)};lSize();addEventListener('resize',lSize);
+  const AT=[0,140,300,500],PW=[.8,.7,.9,1.3],NB=[2,2,3,5];   // when each burst leaves the crystal (ms), how big it is, how many channels
   function jag(a,b,disp,depth){   // midpoint displacement: big bends with fine crackle on top
     let pts=[a,b];
     for(let d=0;d<depth;d++){const o=[pts[0]];for(let i=1;i<pts.length;i++){const p=pts[i-1],q=pts[i],dx=q[0]-p[0],dy=q[1]-p[1],l=Math.hypot(dx,dy)||1,j=(Math.random()-.5)*disp;o.push([(p[0]+q[0])/2-dy/l*j,(p[1]+q[1])/2+dx/l*j],q)}pts=o;disp*=.54}
     return pts}
-  function mkStrike(pw){
-    const x0=W*(.08+.84*Math.random()),ex=W*(.42+.16*Math.random()),main=jag([x0,-20],[ex,H+10],W*.42,7),br=[];
-    for(let i=0,n=3+Math.round(3*pw);i<n;i++){const k=Math.floor(main.length*(.08+.7*Math.random())),a=main[k],sg=Math.random()<.5?-1:1,len=H*(.08+.2*Math.random())*pw,an=Math.PI/2+sg*(.45+.7*Math.random()),
-      b=[a[0]+Math.cos(an)*len,a[1]+Math.sin(an)*len],pts=jag(a,b,len*.38,5);br.push({pts,at:k/main.length,z:.5});
-      if(Math.random()<.55){const m=pts[Math.floor(pts.length*.5)],a2=an-sg*(.6+.6*Math.random()),l2=len*.45;br.push({pts:jag(m,[m[0]+Math.cos(a2)*l2,m[1]+Math.sin(a2)*l2],l2*.4,4),at:Math.min(1,k/main.length+.08),z:.28})}}
-    return{main,br,x0,ex,pw,l:0,L:.26+.16*pw}}
-  const LAY=[[26,'105,0,255',.13],[14,'150,10,255',.24],[7,'215,30,255',.6],[3.2,'255,140,255',.95],[1.3,'255,255,255',1]];
-  function path(pts,upto){lx.beginPath();const n=Math.max(2,Math.ceil(pts.length*upto));lx.moveTo(pts[0][0],pts[0][1]);for(let i=1;i<n&&i<pts.length;i++)lx.lineTo(pts[i][0],pts[i][1])}
-  function drawStrike(q){
-    const u=q.l/q.L,lead=Math.min(1,q.l/.065),re=q.l<.065?.8:(Math.sin(q.l*95)>-.35?1:.35),al=Math.pow(1-u,1.25)*re;
-    for(const[w,c,a]of LAY){
-      lx.strokeStyle='rgba('+c+','+(a*al).toFixed(3)+')';
-      lx.lineWidth=Math.max(.6,w*q.pw*(1-.35*u));path(q.main,lead);lx.stroke();
-      for(const b of q.br){if(lead<b.at)continue;lx.lineWidth=Math.max(.5,w*q.pw*b.z*(1-.35*u));path(b.pts,Math.min(1,(q.l-.065*b.at)/.05));lx.stroke()}}
-    const glowAt=(x,y,r,a)=>{const g=lx.createRadialGradient(x,y,0,x,y,r);g.addColorStop(0,'rgba(255,235,255,'+a.toFixed(3)+')');g.addColorStop(.3,'rgba(210,60,255,'+(a*.6).toFixed(3)+')');g.addColorStop(1,'rgba(120,0,255,0)');lx.fillStyle=g;lx.fillRect(x-r,y-r,r*2,r*2)};
-    glowAt(q.x0,0,W*.55*q.pw,.65*al);if(lead>=1)glowAt(q.ex,H,W*.8*q.pw,.9*al)}
+  function channel(an,pw){   // from a point on the crystal out to the screen edge in direction an
+    const dx=Math.cos(an),dy=Math.sin(an),o=[W/2+dx*W*.1*(.5+Math.random()*.6),H*.46+dy*H*.075*(.5+Math.random()*.6)];
+    const t=Math.min(dx>0?(W+20-o[0])/dx:dx<0?(-20-o[0])/dx:1e9,dy>0?(H+10-o[1])/dy:dy<0?(-20-o[1])/dy:1e9),e=[o[0]+dx*t,o[1]+dy*t],len=Math.hypot(e[0]-o[0],e[1]-o[1]),main=jag(o,e,len*.34,7),br=[];
+    for(let i=0,n=1+Math.round(2.5*pw);i<n;i++){const k=Math.floor(main.length*(.1+.65*Math.random())),a=main[k],sg=Math.random()<.5?-1:1,l=len*(.18+.28*Math.random()),a2=an+sg*(.4+.65*Math.random()),
+      pts=jag(a,[a[0]+Math.cos(a2)*l,a[1]+Math.sin(a2)*l],l*.38,5);br.push({pts,at:k/main.length,z:.5});
+      if(Math.random()<.55){const m=pts[Math.floor(pts.length*.5)],a3=a2-sg*(.6+.6*Math.random()),l2=l*.45;br.push({pts:jag(m,[m[0]+Math.cos(a3)*l2,m[1]+Math.sin(a3)*l2],l2*.4,4),at:Math.min(1,k/main.length+.08),z:.28})}}
+    return{main,br,o}}
+  function mkStrike(i){
+    const n=NB[i],base=Math.random()*6.2832,ch=[];
+    for(let k=0;k<n;k++){let an=base+k*6.2832/n+(Math.random()-.5)*.7;if(i===3&&k===0)an=Math.PI/2+(Math.random()-.5)*.2;ch.push(channel(an,PW[i]))}   // the last burst always sends one straight down to the emitter
+    return{ch,pw:PW[i],l:0,L:.24+.16*PW[i]}}
+  const LAY=[[10,'140,20,255',.38],[5,'220,70,255',.75],[2.4,'255,180,255',1],[1.15,'255,255,255',1]];
+  function path(g,pts,upto){g.beginPath();const n=Math.max(2,Math.ceil(pts.length*upto));g.moveTo(pts[0][0],pts[0][1]);for(let i=1;i<n&&i<pts.length;i++)g.lineTo(pts[i][0],pts[i][1])}
+  function strokes(g,q,w,minW,lead){
+    for(const c of q.ch){g.lineWidth=Math.max(minW,w);path(g,c.main,lead);g.stroke();
+      for(const b of c.br){if(lead<b.at)continue;g.lineWidth=Math.max(minW*.6,w*b.z);path(g,b.pts,Math.min(1,(q.l-.065*b.at)/.05));g.stroke()}}}
+  const power=q=>{const u=q.l/q.L,re=q.l<.065?.85:(Math.sin(q.l*95)>-.35?1:.3);return Math.max(0,Math.pow(Math.max(0,1-u),1.2)*re)};
+  function glowAt(x,y,r,a){const g=bx.createRadialGradient(x,y,0,x,y,r);g.addColorStop(0,'rgba(255,255,255,'+Math.min(1,a).toFixed(3)+')');g.addColorStop(.18,'rgba(240,150,255,'+Math.min(1,a*.8).toFixed(3)+')');g.addColorStop(.5,'rgba(180,30,255,'+Math.min(1,a*.28).toFixed(3)+')');g.addColorStop(1,'rgba(120,0,255,0)');bx.fillStyle=g;bx.fillRect(x-r,y-r,r*2,r*2)}
   function deadFx(isD,ag,dt){
     const live=isD&&ag>=0&&ag<1000;
     if(live&&lIg!==window.__vxIg){lIg=window.__vxIg;lNext=0;strikes=[]}
-    if(live)while(lNext<AT.length&&ag>=AT[lNext]){strikes.push(mkStrike(PW[lNext]));lNext++}
+    if(live)while(lNext<AT.length&&ag>=AT[lNext])strikes.push(mkStrike(lNext++));
     const want=live&&ag<620?1:0;veil+=(want-veil)*(1-Math.exp(-dt*(want?28:7)));
-    if(!live&&veil<.005&&!strikes.length){if(lRun){lx.setTransform(1,0,0,1,0,0);lx.clearRect(0,0,lc.width,lc.height);lRun=false}return}
-    lRun=true;lx.setTransform(ld,0,0,ld,0,0);lx.clearRect(0,0,W,H);
-    let flash=0;for(const q of strikes)flash=Math.max(flash,(1-q.l/q.L)*(q.l>.05?1:0)*q.pw);
+    if(!live&&veil<.005&&!strikes.length){if(lRun){for(const g of[lx,bx]){g.setTransform(1,0,0,1,0,0);g.clearRect(0,0,lc.width,lc.height)}lRun=false}return}
+    lRun=true;lx.setTransform(ld,0,0,ld,0,0);lx.clearRect(0,0,W,H);bx.setTransform(ld,0,0,ld,0,0);bx.clearRect(0,0,W,H);
+    for(let i=strikes.length-1;i>=0;i--)if(strikes[i].l>=strikes[i].L)strikes.splice(i,1);
+    let flash=0;for(const q of strikes)flash=Math.max(flash,power(q)*q.pw);
     const fade=isD&&on?1:Math.max(0,1-(performance.now()-(window.__vxRt||0))/250);
-    lx.globalAlpha=fade;
-    if(veil>.005){lx.fillStyle='rgba(14,0,34,'+(veil*Math.max(.25,.78-.34*flash)).toFixed(3)+')';lx.fillRect(0,0,W,H)}
-    lx.lineCap='round';lx.lineJoin='round';
-    for(let i=strikes.length-1;i>=0;i--){const q=strikes[i];if(q.l>=q.L){strikes.splice(i,1);continue}drawStrike(q);q.l+=dt}
-    lx.globalAlpha=1}
+    if(veil>.005){lx.fillStyle='rgba(12,0,30,'+(fade*veil*Math.max(.25,.8-.36*flash)).toFixed(3)+')';lx.fillRect(0,0,W,H)}
+    if(!strikes.length)return;
+    // the wide bloom around every channel
+    gx.setTransform(1,0,0,1,0,0);gx.globalCompositeOperation='source-over';gx.clearRect(0,0,gc.width,gc.height);gx.setTransform(GS_,0,0,GS_,0,0);gx.lineCap='round';gx.lineJoin='round';gx.globalCompositeOperation='lighter';
+    for(const q of strikes){const al=power(q),lead=Math.min(1,q.l/.065);gx.strokeStyle='rgba(165,30,255,'+(.75*al).toFixed(3)+')';strokes(gx,q,34*q.pw,8,lead);gx.strokeStyle='rgba(235,120,255,'+(.65*al).toFixed(3)+')';strokes(gx,q,14*q.pw,5,lead)}
+    bx.globalCompositeOperation='lighter';bx.globalAlpha=fade;bx.imageSmoothingEnabled=true;
+    bb.clearRect(0,0,gb.width,gb.height);bb.filter='blur(2px)';bb.drawImage(gc,0,0);bb.filter='none';bx.imageSmoothingQuality='high';bx.drawImage(gb,0,0,gb.width/GS_,gb.height/GS_);   // blurred while still small, so the glow has no hard edges
+    // the light the burst throws on everything around the crystal
+    if(flash>.01)glowAt(W/2,H*.46,H*.62,.22*Math.min(1,flash));
+    bx.lineCap='round';bx.lineJoin='round';
+    for(const q of strikes){const al=power(q),lead=Math.min(1,q.l/.065),th=q.pw*(1-.35*q.l/q.L);
+      for(const[w,c,a]of LAY){bx.strokeStyle='rgba('+c+','+(a*al).toFixed(3)+')';strokes(bx,q,w*th,.6,lead)}
+      for(const c of q.ch){glowAt(c.o[0],c.o[1],W*.085*q.pw,.5*al);const e=c.main[c.main.length-1];if(lead>=1)glowAt(e[0],e[1],W*.3*q.pw,.75*al)}
+      q.l+=dt}
+    bx.globalAlpha=1;bx.globalCompositeOperation='source-over'}
   function frame(t){
     requestAnimationFrame(frame);
     const k=CRYSTALS[sel],sp=VX[k.n];
