@@ -58,8 +58,8 @@ jobs:
                   applicationId 'crystals.aem'
                   minSdk 26
                   targetSdk 34
-                  versionCode 302
-                  versionName '3.0.2'
+                  versionCode 303
+                  versionName '3.0.3'
               }
               signingConfigs {
                   debug {
@@ -879,6 +879,27 @@ jobs:
 
       - name: Build APK
         run: gradle assembleDebug --no-daemon
+
+      - name: Sign with the private key (rotated from the old public one)
+        env:
+          NEW_KS_B64: ${{ secrets.NEW_KEYSTORE_B64 }}
+          NEW_KS_PASS: ${{ secrets.NEW_KEYSTORE_PASS }}
+        run: |
+          set -e
+          if [ -z "$NEW_KS_B64" ] || [ -z "$NEW_KS_PASS" ]; then
+            if [ "$GITHUB_REPOSITORY" = "Aem2512/Crystals" ]; then echo "Signing secrets are missing"; exit 1; fi
+            echo "No private key set (fork): keeping the public key signature"; exit 0
+          fi
+          NEW="$RUNNER_TEMP/new.p12"
+          LIN="$RUNNER_TEMP/lineage"
+          echo "$NEW_KS_B64" | tr -d '[:space:]' | base64 -d > "$NEW"
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          OLD="--ks crystals.keystore --ks-key-alias crystals --ks-pass pass:crystals123 --key-pass pass:crystals123"
+          "$BT/apksigner" rotate --out "$LIN" --old-signer $OLD --new-signer --ks "$NEW" --ks-key-alias crystals2 --ks-pass env:NEW_KS_PASS
+          "$BT/apksigner" sign $OLD --next-signer --ks "$NEW" --ks-key-alias crystals2 --ks-pass env:NEW_KS_PASS --lineage "$LIN" "$APK"
+          "$BT/apksigner" verify --verbose --print-certs "$APK"
+          rm -f "$NEW"
 
       - uses: actions/upload-artifact@v4
         with:
